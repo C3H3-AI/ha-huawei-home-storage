@@ -25,7 +25,16 @@ hs_login_state.json
 capture_*.jsonl
 *.token
 .env
+# 账号/设备实拍记录：含真实手机号、序列号、密码，绝不入库
+*.local.json
+*.local.md
+local/
+secrets/
+credentials*
+*token*
+!*token*.py
 
 # --- 内部工作底稿 ---
 # 代码审计报告属本地排查记录，不作为项目文档对外发布
 audit-reports/
+_rebuild/
