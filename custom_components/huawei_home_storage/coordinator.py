@@ -350,7 +350,18 @@ class HuaweiAlbumCoordinator(_HuaweiBaseCoordinator):
                 None,
             ),
         }
-        return {"albums": {ALBUM_TYPE_ALL: albums, **buckets}, "counts": counts}
+        # 重复照片扫描结果（POST，只读）。与相册同域，失败沿用上一轮值。
+        try:
+            dup = await self.client.async_query_duplicate_scan()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("重复照片统计本轮不可用: %s", err)
+            dup = (self.data or {}).get("dup")
+
+        return {
+            "albums": {ALBUM_TYPE_ALL: albums, **buckets},
+            "counts": counts,
+            "dup": dup,
+        }
 
     def albums_of(self, album_type: int) -> list[dict[str, Any]]:
         return (self.data or {}).get("albums", {}).get(album_type, [])

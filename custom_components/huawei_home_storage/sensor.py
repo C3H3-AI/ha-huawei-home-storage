@@ -18,7 +18,11 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, UnitOfInformation
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfInformation,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -444,52 +448,58 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
     ),
     HuaweiSensorDescription(
         key="firmware_version",
+        scope=DEVICE_SCOPE,
         translation_key="firmware_version",
         icon="mdi:chip",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_firmware_version,
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="upgrade_state",
+        scope=DEVICE_SCOPE,
         translation_key="upgrade_state",
         icon="mdi:update",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_upgrade_state,
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="cpu_model",
+        scope=DEVICE_SCOPE,
         translation_key="cpu_model",
         icon="mdi:cpu-64-bit",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_device_info_field("CpuName"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="cpu_cores",
+        scope=DEVICE_SCOPE,
         translation_key="cpu_cores",
         icon="mdi:cpu-64-bit",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_device_info_field("CpuCores"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="serial_number",
+        scope=DEVICE_SCOPE,
         translation_key="serial_number",
         icon="mdi:identifier",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_device_info_field("SerialNumber"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="cpu_usage",
+        scope=DEVICE_SCOPE,
         translation_key="cpu_usage",
         icon="mdi:cpu-64-bit",
         native_unit_of_measurement="%",
@@ -500,6 +510,7 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
     ),
         HuaweiSensorDescription(
         key="cpu_temperature",
+        scope=DEVICE_SCOPE,
         translation_key="cpu_temperature",
         icon="mdi:thermometer",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
@@ -511,6 +522,7 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
     ),
         HuaweiSensorDescription(
         key="memory_total",
+        scope=DEVICE_SCOPE,
         translation_key="memory_total",
         icon="mdi:memory",
         native_unit_of_measurement=UnitOfInformation.BYTES,
@@ -523,6 +535,7 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
     ),
         HuaweiSensorDescription(
         key="memory_used",
+        scope=DEVICE_SCOPE,
         translation_key="memory_used",
         icon="mdi:memory",
         native_unit_of_measurement=UnitOfInformation.BYTES,
@@ -550,10 +563,11 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
     ),
         HuaweiSensorDescription(
         key="samba_public_enabled",
+        scope=DEVICE_SCOPE,
         translation_key="samba_public_enabled",
         icon="mdi:folder-network",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_plain("samba_public", "AnonymousEnable"),
         data_key="info",
     ),
@@ -562,71 +576,78 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
         translation_key="samba_user_enabled",
         icon="mdi:folder-network-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_plain("samba_user", "Enable"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="auto_upgrade",
+        scope=DEVICE_SCOPE,
         translation_key="auto_upgrade",
         icon="mdi:update",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_plain("auto_upgrade", "Enable"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="auto_upgrade_window",
+        scope=DEVICE_SCOPE,
         translation_key="auto_upgrade_window",
         icon="mdi:clock-time-four",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_auto_upgrade_window,
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="ipv4_address",
+        scope=DEVICE_SCOPE,
         translation_key="ipv4_address",
         icon="mdi:ip-network",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_nested("wan_info", "IPv4Addr"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="ipv6_address",
+        scope=DEVICE_SCOPE,
         translation_key="ipv6_address",
         icon="mdi:ip-network-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_nested("wan_info", "IPv6Addr2"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="operation_devices",
+        scope=DEVICE_SCOPE,
         translation_key="operation_devices",
         icon="mdi:devices",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_operation_device_count,
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="error_code",
+        scope=DEVICE_SCOPE,
         translation_key="error_code",
         icon="mdi:alert-circle-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_dev_err("errorCode"),
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="repair_mode",
+        scope=DEVICE_SCOPE,
         translation_key="repair_mode",
         icon="mdi:wrench",
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_repair_mode,
         data_key="info",
     ),
@@ -636,7 +657,7 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
         icon="mdi:history",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_recent_files_count,
         attrs_fn=_recent_file_names,
         data_key="info",
@@ -647,20 +668,20 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
         icon="mdi:file-multiple",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+
         value_fn=_all_files_count,
         data_key="info",
     ),
         HuaweiSensorDescription(
         key="installed_plugins",
+        scope=DEVICE_SCOPE,
         translation_key="installed_plugins",
         icon="mdi:puzzle",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
-        data_key="fast",
+        data_key="info",
         value_fn=_plugin_count,
         attrs_fn=_plugin_names,
-        data_key="info",
     ),
 )
 
