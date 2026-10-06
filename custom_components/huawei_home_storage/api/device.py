@@ -524,6 +524,29 @@ class HuaweiDeviceClient:
             method="POST",
         )
 
+    async def _media_body(self, file_ids: list[str] | list[int]) -> dict[str, Any]:
+        """构造 delFile/recoverFile 的 body。
+
+        ⚠️ 实测（2026-10-06，AS6020-02）：这三个字段缺一不可，否则返回
+        ``30102``（``delFile``/``recoverFile`` 都是）：
+          * ``clientType`` = **会话的 clientType**（``DEVICE_CLIENT_TYPE``）。
+            用手机端的 ``1`` 会被拒；必须与 query 参数里的 clientType 一致。
+          * ``deviceId`` = ``creds.cloud_dev_id``（设备 SN，如
+            ``SN-REDACTED``）。不是客户端安装标识。
+          * ``userId`` = ``"1"``。
+        成员字段名是 ``fileId``（``DeleteMediaInfoBean$MemberBean``），
+        且必须是 **gallery 域**的 fileId（``getIncPhotosInfoTable`` 里的
+        ``fileId``），不是 ``filesvc`` 的 ``fid``。
+        """
+        creds = await self.async_ensure_credentials()
+        return {
+            "membs": [{"fileId": int(fid)} for fid in file_ids],
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": creds.cloud_dev_id,
+            "userId": "1",
+            "empty": 0,
+        }
+
     async def async_delete_media(self, file_ids: list[str]) -> dict[str, Any]:
         """把照片/视频移入回收站（**可逆**，不是永久删除）。
 
@@ -533,12 +556,7 @@ class HuaweiDeviceClient:
         return await self._request(
             API_DEL_MEDIA,
             method="POST",
-            json_body={
-                "membs": [{"id": fid} for fid in file_ids],
-                "clientType": 1,
-                "userId": "1",
-                "empty": 0,
-            },
+            json_body=await self._media_body(file_ids),
         )
 
     async def async_recover_media(self, file_ids: list[str]) -> dict[str, Any]:
@@ -546,12 +564,7 @@ class HuaweiDeviceClient:
         return await self._request(
             API_RECOVER_MEDIA,
             method="POST",
-            json_body={
-                "membs": [{"id": fid} for fid in file_ids],
-                "clientType": 1,
-                "userId": "1",
-                "empty": 0,
-            },
+            json_body=await self._media_body(file_ids),
         )
 
     async def async_post_device_reboot(self) -> dict[str, Any]:

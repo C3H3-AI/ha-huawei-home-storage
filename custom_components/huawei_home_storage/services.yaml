@@ -5,3 +5,64 @@ refresh_credentials:
       example: "3f2b9c1e4d5a"
       selector:
         text:
+
+duplicate_scan:
+  name: 重复照片扫描
+  description: 启动或停止重复照片扫描（不会删除照片）
+  fields:
+    entry_id:
+      required: false
+      selector: {text: {}}
+    act:
+      required: true
+      example: start
+      selector:
+        select:
+          options: [start, stop]
+
+query_files:
+  name: 查询文件
+  description: 列出最近/全部/指定目录/相册照片（只读）
+  fields:
+    entry_id:
+      required: false
+      selector: {text: {}}
+    source:
+      required: false
+      example: recent
+      selector:
+        select:
+          options: [recent, all, dir, photos]
+    dir_path:
+      required: false
+      example: /file/
+      selector: {text: {}}
+    limit:
+      required: false
+      example: 20
+      selector:
+        number: {min: 1, max: 200}
+
+delete_media:
+  name: 移入回收站
+  description: 把照片/视频移入回收站（可恢复，不会永久删除）
+  fields:
+    entry_id:
+      required: false
+      selector: {text: {}}
+    file_ids:
+      required: true
+      example: "281474976710690"
+      selector: {text: {}}
+
+recover_media:
+  name: 恢复媒体
+  description: 从回收站恢复照片/视频
+  fields:
+    entry_id:
+      required: false
+      selector: {text: {}}
+    file_ids:
+      required: true
+      example: "281474976710690"
+      selector: {text: {}}

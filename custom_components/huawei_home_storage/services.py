@@ -102,6 +102,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
             elif source == "all":
                 raw = await client.async_get_all_files(limit=limit)
                 items = ((raw or {}).get("data") or {}).get("files") or []
+            elif source == "photos":
+                raw = await client.async_get_photos_table(0)
+                items = raw.get("data") if isinstance(raw, dict) else raw
+                items = items if isinstance(items, list) else []
             else:
                 dir_path = call.data.get("dir_path") or "/file/"
                 items = await client.async_list_files(dir_path)
@@ -114,7 +118,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
             if not isinstance(item, dict):
                 return {}
             return {k: item.get(k) for k in
-                    ("name", "mime", "size", "mtime", "path", "type", "fid", "id") if k in item}
+                    ("name", "mime", "size", "mtime", "path", "type", "fid", "id",
+                     "fileId", "rowId", "operation") if k in item}
 
         return {"ok": True, "source": source, "count": len(items),
                 "items": [_brief(i) for i in items][:limit]}
@@ -166,7 +171,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_QUERY_FILES, _query_files,
         schema=vol.Schema({
             vol.Optional("entry_id"): str,
-            vol.Optional("source"): vol.In(("recent", "all", "dir")),
+            vol.Optional("source"): vol.In(("recent", "all", "dir", "photos")),
             vol.Optional("dir_path"): str,
             vol.Optional("limit", default=20): vol.All(int, vol.Range(min=1, max=200)),
         }),
