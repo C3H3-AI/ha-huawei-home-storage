@@ -1,0 +1,31 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- HA / HACS ---
+.storage/
+home-assistant.log
+home-assistant_v2.db
+
+# --- 编辑器 ---
+.vscode/
+.idea/
+*.swp
+
+# --- 系统 ---
+.DS_Store
+Thumbs.db
+
+# --- 本地凭据与抓包（绝不入库）---
+*_creds.json
+hs_login_state.json
+capture_*.jsonl
+*.token
+.env
+
+# --- 内部工作底稿 ---
+# 代码审计报告属本地排查记录，不作为项目文档对外发布
+audit-reports/

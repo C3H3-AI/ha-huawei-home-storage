@@ -1,0 +1,303 @@
+{
+  "title": "Huawei Home Storage",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Huawei Home Storage",
+        "description": "Choose how to sign in. Either way, the device IP, MAC, serial number and model are fetched from the cloud automatically.",
+        "data": {
+          "login_method": "Login method"
+        }
+      },
+      "account": {
+        "title": "Sign in to Huawei Account",
+        "description": "Enter your Huawei account and password. Credentials are stored only in your Home Assistant instance and are used to discover the device.",
+        "data": {
+          "account": "Huawei account (phone / email)",
+          "password": "Password"
+        }
+      },
+      "challenge": {
+        "title": "Account verification code",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "Verification code"
+        }
+      },
+      "authorize": {
+        "title": "Authorize Huawei Account",
+        "description": "Open the following URL (or scan the code) in a browser and confirm the authorization:\n\n{url}\n\nVerification code: {code}\n\nThen press Submit.",
+        "data": {}
+      },
+      "retry": {
+        "title": "Huawei Home Storage",
+        "description": "Could not reach Huawei Cloud. Check Home Assistant's network and press Submit to retry.",
+        "data": {}
+      },
+      "device": {
+        "title": "Select device",
+        "description": "Choose the Home Storage device to add from your account.",
+        "data": {
+          "device_id": "Device"
+        }
+      },
+      "menu": {
+        "title": "Account management",
+        "description": "{accounts} account(s) connected: {list}. Device attributes (disk, online, file space) come from the admin account; album stats differ per account.",
+        "menu_options": {
+          "add_account": "Add account",
+          "remove_account": "Remove account",
+          "relogin": "Re-login an account"
+        }
+      },
+      "add_account": {
+        "title": "Add Huawei account",
+        "description": "Enter the Huawei account to connect to this storage. Each account sees its own albums and files.",
+        "data": {
+          "account": "Huawei account (phone / email)",
+          "password": "Password"
+        }
+      },
+      "remove_account": {
+        "title": "Remove account",
+        "description": "Pick an account to remove (at least one is kept). Its album entities are removed too.",
+        "data": {
+          "account": "Account"
+        }
+      },
+      "relogin": {
+        "title": "Re-login account",
+        "description": "Update credentials for an expired account without affecting others.",
+        "data": {
+          "account": "Account",
+          "password": "Password"
+        }
+      },
+      "acct_challenge": {
+        "title": "Verification code",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "Code"
+        }
+      },
+      "challenge_channel": {
+        "title": "Choose verification method",
+        "description": "This Huawei account needs a verification code. Choose how to receive it: **SMS** sends the code to the phone bound to the account; **Signed-in device** requires you to read it on a Huawei device already signed in to this account."
+      },
+      "acct_challenge_channel": {
+        "title": "Choose verification method",
+        "description": "This Huawei account needs a verification code. Choose how to receive it: **SMS** sends the code to the phone bound to the account; **Signed-in device** requires you to read it on a Huawei device already signed in to this account."
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach Huawei Cloud, check your network and retry.",
+      "invalid_auth": "Incorrect Huawei account or password.",
+      "invalid_challenge": "Incorrect or expired verification code, please retry.",
+      "auth_failed": "Authorization failed, please start over.",
+      "authorization_pending": "Authorization not detected yet. Confirm in the browser, then submit again.",
+      "code_expired": "The verification code expired. A new one has been generated, please authorize again.",
+      "no_device": "No Home Storage device found in this account.",
+      "unknown": "Unexpected error, check the logs.",
+      "account_exists": "This account is already connected.",
+      "too_many_accounts": "Account limit reached.",
+      "code_dispatch_failed": "Could not send the verification code. Try again or pick another method."
+    },
+    "abort": {
+      "cannot_connect": "Cannot reach Huawei Cloud or obtain device credentials.",
+      "no_device": "No Home Storage device found in this account.",
+      "already_configured": "This device is already configured for this Huawei account. To access the same device with another account, add it again with that account.",
+      "reauth_successful": "Re-authorization successful.",
+      "smarthome_unavailable": "Account login module unavailable; use device-code authorization instead.",
+      "too_many_accounts": "Maximum number of accounts reached.",
+      "account_exists": "This account is already connected.",
+      "auth_failed": "Authorization failed, please start over.",
+      "cannot_remove_last": "At least one account must remain.",
+      "account_not_found": "Account not found.",
+      "reconfigure_successful": "Account information updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Account management",
+        "description": "{accounts} account(s) connected: {list}. Device attributes (disk, online, file space) come from the admin account; album stats differ per account.",
+        "menu_options": {
+          "add_account": "Add account",
+          "remove_account": "Remove account",
+          "relogin": "Re-login an account",
+          "host": "Device IP (set manually if auto-detect fails)"
+        }
+      },
+      "host": {
+        "title": "Device IP",
+        "description": "Connected accounts: {accounts}. The device IP is normally auto-detected; set it manually only if detection failed.",
+        "data": {
+          "host": "Device IP (leave empty for auto-detect)"
+        }
+      },
+      "add_account": {
+        "title": "Add Huawei account",
+        "description": "Enter the Huawei account to connect to this storage. Each account sees its own albums and files.",
+        "data": {
+          "account": "Huawei account (phone / email)",
+          "password": "Password"
+        }
+      },
+      "remove_account": {
+        "title": "Remove account",
+        "description": "Pick an account to remove (at least one is kept). Its album entities are removed too.",
+        "data": {
+          "account": "Account"
+        }
+      },
+      "relogin": {
+        "title": "Re-login account",
+        "description": "Update credentials for an expired account without affecting others.",
+        "data": {
+          "account": "Account",
+          "password": "Password"
+        }
+      },
+      "acct_challenge": {
+        "title": "Verification code",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "Code"
+        }
+      },
+      "acct_challenge_channel": {
+        "title": "Choose verification method",
+        "description": "This Huawei account needs a verification code. Choose how to receive it: **SMS** sends the code to the phone bound to the account; **Signed-in device** requires you to read it on a Huawei device already signed in to this account."
+      }
+    },
+    "abort": {
+      "cannot_connect": "Cannot reach Huawei Cloud or fetch device credentials.",
+      "smarthome_unavailable": "The account login module is unavailable; use device-code authorization instead.",
+      "too_many_accounts": "Account limit reached (max 8).",
+      "account_exists": "This account is already in this entry.",
+      "auth_failed": "Authorization failed; please restart the configuration.",
+      "cannot_remove_last": "At least one account must remain.",
+      "account_not_found": "Account not found."
+    },
+    "error": {
+      "invalid_auth": "Incorrect Huawei account or password.",
+      "invalid_challenge": "Incorrect or expired verification code.",
+      "account_exists": "This account is already in this entry.",
+      "code_dispatch_failed": "Could not send the verification code. Try again or pick another method."
+    }
+  },
+  "selector": {
+    "login_method": {
+      "options": {
+        "account": "Huawei account + password (no browser hop, recommended)",
+        "device_code": "Device code (confirm once in a browser, HA never sees the password)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "photos": {
+        "name": "Photos"
+      },
+      "videos": {
+        "name": "Videos"
+      },
+      "albums_user": {
+        "name": "User albums"
+      },
+      "albums_face": {
+        "name": "People albums"
+      },
+      "albums_scene": {
+        "name": "Scene albums"
+      },
+      "albums_place": {
+        "name": "Place albums"
+      },
+      "trash": {
+        "name": "Recently deleted"
+      },
+      "disk_total": {
+        "name": "Disk total"
+      },
+      "disk_used": {
+        "name": "Disk used"
+      },
+      "disk_free": {
+        "name": "Disk free"
+      },
+      "disk_usage": {
+        "name": "Disk usage"
+      },
+      "account_quota_used": {
+        "name": "Account usage"
+      },
+      "device_users": {
+        "name": "Device users"
+      },
+      "device_admins": {
+        "name": "Administrators"
+      },
+      "disk_slots": {
+        "name": "Disks"
+      },
+      "usb_devices": {
+        "name": "USB devices"
+      },
+      "disk_slot_total": {
+        "name": "Disk {slot} total"
+      },
+      "disk_slot_used": {
+        "name": "Disk {slot} used"
+      }
+    },
+    "binary_sensor": {
+      "online": {
+        "name": "Online"
+      },
+      "usb": {
+        "name": "USB device"
+      }
+    }
+  },
+  "services": {
+    "refresh_credentials": {
+      "name": "Refresh device credentials",
+      "description": "Request a new device session from Huawei Cloud (use when the device returns 401 or credentials expire).",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "Leave empty to target the first configured device."
+        }
+      }
+    }
+  },
+  "common": {
+    "title": "Home Storage",
+    "empty": "No device configured yet.",
+    "refresh": "Refresh credentials",
+    "refreshing": "Refreshing…",
+    "open_media": "Open media browser",
+    "photos": "Photos",
+    "videos": "Videos",
+    "user_albums": "User albums",
+    "face_albums": "People",
+    "scene_albums": "Scenes",
+    "place_albums": "Places",
+    "trash": "Recently deleted",
+    "disk_total": "Disk total",
+    "disk_used": "Disk used",
+    "disk_free": "Disk free",
+    "disk_usage": "Usage",
+    "usb": "USB",
+    "users": "Device users",
+    "model": "Model",
+    "serial": "Serial",
+    "mac": "MAC",
+    "lan": "LAN address",
+    "tunnel": "Session tunnel",
+    "account_login": "Huawei account {account} (password login)",
+    "device_code_login": "Device code authorization",
+    "session_at": "Session obtained at"
+  }
+}

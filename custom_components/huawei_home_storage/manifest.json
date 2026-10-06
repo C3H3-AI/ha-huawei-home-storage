@@ -1,0 +1,21 @@
+{
+  "domain": "huawei_home_storage",
+  "name": "Huawei Home Storage",
+  "codeowners": [
+    "@C3H3-AI"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "http",
+    "media_source"
+  ],
+  "documentation": "https://github.com/C3H3-AI/ha-huawei-home-storage",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/C3H3-AI/ha-huawei-home-storage/issues",
+  "loggers": [
+    "custom_components.huawei_home_storage"
+  ],
+  "requirements": [],
+  "version": "0.8.0"
+}

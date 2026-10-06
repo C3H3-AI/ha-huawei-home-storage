@@ -1,0 +1,303 @@
+{
+  "title": "华为家庭存储",
+  "config": {
+    "step": {
+      "user": {
+        "title": "华为家庭存储",
+        "description": "选择登录方式。两种方式之后都由云端自动获取设备 IP、MAC、序列号、型号，无需手工填写。",
+        "data": {
+          "login_method": "登录方式"
+        }
+      },
+      "account": {
+        "title": "登录华为账号",
+        "description": "输入华为账号与密码。凭据仅保存在你的 Home Assistant 中，用于自动获取设备信息。",
+        "data": {
+          "account": "华为账号（手机号 / 邮箱）",
+          "password": "密码"
+        }
+      },
+      "challenge": {
+        "title": "账号验证码",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "验证码"
+        }
+      },
+      "authorize": {
+        "title": "授权华为账号",
+        "description": "请在浏览器中打开以下网址（或扫码）并确认授权：\n\n{url}\n\n确认码：{code}\n\n确认后回到这里点击“提交”。",
+        "data": {}
+      },
+      "retry": {
+        "title": "华为家庭存储",
+        "description": "未能连接华为云申请授权。请检查 Home Assistant 的网络后点击“提交”重试。",
+        "data": {}
+      },
+      "device": {
+        "title": "选择设备",
+        "description": "从账号下选择要接入的家庭存储设备。",
+        "data": {
+          "device_id": "设备"
+        }
+      },
+      "menu": {
+        "title": "账号管理",
+        "description": "当前已接入 {accounts} 个账号：{list}。设备属性（磁盘、在线状态、文件空间）由管理员账号提供；各账号的相册统计互相独立。",
+        "menu_options": {
+          "add_account": "添加账号",
+          "remove_account": "移除账号",
+          "relogin": "重新登录某个账号"
+        }
+      },
+      "add_account": {
+        "title": "添加华为账号",
+        "description": "输入要接入这台家庭存储的华为账号。不同账号能看到各自的相册与文件。",
+        "data": {
+          "account": "华为账号（手机号 / 邮箱）",
+          "password": "密码"
+        }
+      },
+      "remove_account": {
+        "title": "移除账号",
+        "description": "选择要移除的账号（至少保留一个）。移除后该账号的相册统计实体一并删除。",
+        "data": {
+          "account": "账号"
+        }
+      },
+      "relogin": {
+        "title": "重新登录账号",
+        "description": "账号会话过期时更新其凭据，不影响其它账号。",
+        "data": {
+          "account": "账号",
+          "password": "密码"
+        }
+      },
+      "acct_challenge": {
+        "title": "账号验证码",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "验证码"
+        }
+      },
+      "challenge_channel": {
+        "title": "选择验证码接收方式",
+        "description": "华为账号需要验证码验证。请选择接收方式：**短信验证码**会发送到账号绑定的手机上；**已登录设备推送**需要你在已登录该账号的华为设备上查看。"
+      },
+      "acct_challenge_channel": {
+        "title": "选择验证码接收方式",
+        "description": "该华为账号需要验证码验证。请选择接收方式：**短信验证码**会发送到账号绑定的手机上；**已登录设备推送**需要你在已登录该账号的华为设备上查看。"
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接华为云，请检查网络后重试。",
+      "invalid_auth": "华为账号或密码不正确。",
+      "invalid_challenge": "验证码不正确或已过期，请重试。",
+      "auth_failed": "授权失败，请重新发起配置。",
+      "authorization_pending": "尚未检测到授权，请先在浏览器中确认，然后再次提交。",
+      "code_expired": "确认码已过期，已为你生成新的确认码，请重新授权。",
+      "no_device": "该账号下未找到家庭存储设备。",
+      "unknown": "未知错误，请查看日志。",
+      "account_exists": "该账号已在本条目中。",
+      "too_many_accounts": "账号数量已达上限。",
+      "code_dispatch_failed": "验证码下发失败，请重试或改用其他接收方式"
+    },
+    "abort": {
+      "cannot_connect": "无法连接华为云或获取设备凭据。",
+      "no_device": "该账号下未找到家庭存储设备。",
+      "already_configured": "该设备已在本账号下配置。若要用另一个华为账号接入同一台设备，请直接重新添加并填写另一个账号。",
+      "reauth_successful": "重新授权成功。",
+      "reconfigure_successful": "账号信息已更新。",
+      "smarthome_unavailable": "账号登录模块不可用，请改用设备码授权。",
+      "too_many_accounts": "账号数量已达上限（最多 8 个）。",
+      "account_exists": "该账号已在本条目中。",
+      "auth_failed": "授权失败，请重新发起配置。",
+      "cannot_remove_last": "至少需要保留一个账号。",
+      "account_not_found": "未找到该账号。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "账号管理",
+        "description": "当前已接入 {accounts} 个账号：{list}。设备属性（磁盘、在线状态、文件空间）由管理员账号提供；各账号的相册统计互相独立。",
+        "menu_options": {
+          "add_account": "添加账号",
+          "remove_account": "移除账号",
+          "relogin": "重新登录某个账号",
+          "host": "设备 IP（自动获取失败时手动指定）"
+        }
+      },
+      "add_account": {
+        "title": "添加华为账号",
+        "description": "输入要接入这台家庭存储的华为账号。不同账号能看到各自的相册与文件。",
+        "data": {
+          "account": "华为账号（手机号 / 邮箱）",
+          "password": "密码"
+        }
+      },
+      "remove_account": {
+        "title": "移除账号",
+        "description": "选择要移除的账号（至少保留一个）。移除后该账号的相册统计实体一并删除。",
+        "data": {
+          "account": "账号"
+        }
+      },
+      "relogin": {
+        "title": "重新登录账号",
+        "description": "账号会话过期时更新其凭据，不影响其它账号。",
+        "data": {
+          "account": "账号",
+          "password": "密码"
+        }
+      },
+      "acct_challenge": {
+        "title": "账号验证码",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "验证码"
+        }
+      },
+      "host": {
+        "title": "设备 IP",
+        "description": "已接入账号：{accounts}。设备 IP 一般由云端自动获取，仅在自动获取失败时才需要手动填写。",
+        "data": {
+          "host": "设备 IP 地址（留空则自动获取）"
+        }
+      },
+      "acct_challenge_channel": {
+        "title": "选择验证码接收方式",
+        "description": "该华为账号需要验证码验证。请选择接收方式：**短信验证码**会发送到账号绑定的手机上；**已登录设备推送**需要你在已登录该账号的华为设备上查看。"
+      }
+    },
+    "error": {
+      "invalid_auth": "华为账号或密码不正确。",
+      "invalid_challenge": "验证码不正确或已过期，请重试。",
+      "account_exists": "该账号已在本条目中。",
+      "code_dispatch_failed": "验证码下发失败，请重试或改用其他接收方式"
+    },
+    "abort": {
+      "cannot_connect": "无法连接华为云或获取设备凭据。",
+      "smarthome_unavailable": "账号登录模块不可用，请改用设备码授权。",
+      "too_many_accounts": "账号数量已达上限（最多 8 个）。",
+      "account_exists": "该账号已在本条目中。",
+      "auth_failed": "授权失败，请重新发起配置。",
+      "cannot_remove_last": "至少需要保留一个账号。",
+      "account_not_found": "未找到该账号。"
+    }
+  },
+  "selector": {
+    "login_method": {
+      "options": {
+        "account": "华为账号密码（不跳转浏览器，推荐）",
+        "device_code": "设备码授权（浏览器确认一次，HA 不接触密码）"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "photos": {
+        "name": "照片总数"
+      },
+      "videos": {
+        "name": "视频总数"
+      },
+      "albums_user": {
+        "name": "用户相册数"
+      },
+      "albums_face": {
+        "name": "人物相册数"
+      },
+      "albums_scene": {
+        "name": "场景相册数"
+      },
+      "albums_place": {
+        "name": "地点相册数"
+      },
+      "trash": {
+        "name": "最近删除数量"
+      },
+      "disk_total": {
+        "name": "磁盘总容量"
+      },
+      "disk_used": {
+        "name": "磁盘已用"
+      },
+      "disk_free": {
+        "name": "磁盘可用"
+      },
+      "disk_usage": {
+        "name": "磁盘使用率"
+      },
+      "account_quota_used": {
+        "name": "本账号占用空间"
+      },
+      "device_users": {
+        "name": "设备用户数"
+      },
+      "device_admins": {
+        "name": "管理员数"
+      },
+      "disk_slots": {
+        "name": "硬盘数量"
+      },
+      "usb_devices": {
+        "name": "USB 设备数"
+      },
+      "disk_slot_total": {
+        "name": "Disk {slot} total"
+      },
+      "disk_slot_used": {
+        "name": "Disk {slot} used"
+      }
+    },
+    "binary_sensor": {
+      "online": {
+        "name": "在线"
+      },
+      "usb": {
+        "name": "USB 设备接入"
+      }
+    }
+  },
+  "services": {
+    "refresh_credentials": {
+      "name": "刷新设备凭据",
+      "description": "重新向华为云申请设备会话凭据（设备报 401 或凭据过期时使用）。",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": "留空则对第一个已配置的设备执行。"
+        }
+      }
+    }
+  },
+  "common": {
+    "title": "家庭存储",
+    "empty": "尚未配置任何设备。",
+    "refresh": "刷新凭据",
+    "refreshing": "刷新中…",
+    "open_media": "打开媒体浏览",
+    "photos": "照片",
+    "videos": "视频",
+    "user_albums": "用户相册",
+    "face_albums": "人物",
+    "scene_albums": "场景",
+    "place_albums": "地点",
+    "trash": "最近删除",
+    "disk_total": "磁盘总容量",
+    "disk_used": "磁盘已用",
+    "disk_free": "磁盘可用",
+    "disk_usage": "使用率",
+    "usb": "USB",
+    "users": "设备用户",
+    "model": "型号",
+    "serial": "序列号",
+    "mac": "MAC",
+    "lan": "局域网地址",
+    "tunnel": "设备会话通道",
+    "account_login": "华为账号 {account}（账号密码登录）",
+    "device_code_login": "设备码授权",
+    "session_at": "设备会话取得时间"
+  }
+}

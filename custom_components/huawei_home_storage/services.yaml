@@ -1,0 +1,7 @@
+refresh_credentials:
+  fields:
+    entry_id:
+      required: false
+      example: "3f2b9c1e4d5a"
+      selector:
+        text:
