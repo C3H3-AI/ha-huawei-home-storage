@@ -108,8 +108,13 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 items = items if isinstance(items, list) else []
             else:
                 dir_path = call.data.get("dir_path") or "/file/"
-                items = await client.async_list_files(dir_path)
-                items = items if isinstance(items, list) else []
+                raw = await client.async_list_files(dir_path)
+                # v0.8.0 的 async_list_files 返回 {"files": [...], "count": N}
+                # （旧版返回 list），两种形态都兼容。
+                if isinstance(raw, dict):
+                    items = raw.get("files") or []
+                else:
+                    items = raw if isinstance(raw, list) else []
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("查询文件失败(%s): %s", source, err)
             return {"ok": False, "error": str(err)}
