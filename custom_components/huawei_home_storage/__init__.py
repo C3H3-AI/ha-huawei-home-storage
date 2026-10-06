@@ -42,6 +42,7 @@ from .const import (
 from .coordinator import (
     HuaweiAlbumCoordinator,
     HuaweiFastCoordinator,
+    HuaweiInfoCoordinator,
     HuaweiStorageData,
 )
 from .entity import _account_key, main_device_identifier, main_device_info
@@ -357,12 +358,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: HuaweiConfigEntry) -> bo
 
     fast = HuaweiFastCoordinator(hass, entry, client)
     albums = HuaweiAlbumCoordinator(hass, entry, client)
+    info = HuaweiInfoCoordinator(hass, entry, client)
     runtime = HuaweiStorageData(
         client=client,
         fast=fast,
         albums=albums,
         title=entry.title,
         is_primary=True,
+       info=info,
     )
     runtime.accounts = list(accounts)
     # 主账号的协调器也用**真实账号 key** 索引，避免出现 "" 这个特殊键

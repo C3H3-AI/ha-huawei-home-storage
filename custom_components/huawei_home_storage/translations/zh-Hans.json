@@ -249,6 +249,81 @@
       },
       "disk_slot_used": {
         "name": "硬盘 {slot} 已用"
+      },
+      "firmware_version": {
+        "name": "固件版本"
+      },
+      "upgrade_state": {
+        "name": "升级状态"
+      },
+      "cpu_model": {
+        "name": "CPU 型号"
+      },
+      "cpu_cores": {
+        "name": "CPU 核心数"
+      },
+      "serial_number": {
+        "name": "序列号"
+      },
+      "cpu_usage": {
+        "name": "CPU 使用率"
+      },
+      "cpu_temperature": {
+        "name": "CPU 温度"
+      },
+      "memory_total": {
+        "name": "内存总量"
+      },
+      "memory_used": {
+        "name": "内存已用"
+      },
+      "duplicate_photos": {
+        "name": "重复照片数"
+      },
+      "duplicate_scan_status": {
+        "name": "重复扫描状态"
+      },
+      "samba_public_enabled": {
+        "name": "公共 Samba 共享"
+      },
+      "samba_user_enabled": {
+        "name": "用户 Samba 共享"
+      },
+      "auto_upgrade": {
+        "name": "自动升级"
+      },
+      "auto_upgrade_window": {
+        "name": "自动升级时段"
+      },
+      "ipv4_address": {
+        "name": "IPv4 地址"
+      },
+      "ipv6_address": {
+        "name": "IPv6 地址"
+      },
+      "operation_devices": {
+        "name": "访问设备数"
+      },
+      "error_code": {
+        "name": "设备错误码"
+      },
+      "repair_mode": {
+        "name": "维修模式"
+      },
+      "recent_files": {
+        "name": "最近文件数"
+      },
+      "all_files": {
+        "name": "全部文件数"
+      },
+      "installed_plugins": {
+        "name": "已装插件数"
+      },
+      "disk_used_percent": {
+        "name": "磁盘使用率"
+      },
+      "disk_error": {
+        "name": "磁盘故障码"
       }
     },
     "binary_sensor": {
@@ -257,6 +332,17 @@
       },
       "usb": {
         "name": "USB 设备接入"
+      }
+    },
+    "button": {
+      "disk_sleep": {
+        "name": "磁盘休眠"
+      },
+      "usb_plug_out": {
+        "name": "弹出 USB"
+      },
+      "device_reboot": {
+        "name": "重启设备"
       }
     }
   },
@@ -270,6 +356,22 @@
           "description": "留空则对第一个已配置的设备执行。"
         }
       }
+    },
+    "duplicate_scan": {
+      "name": "重复照片扫描",
+      "description": "启动或停止重复照片扫描（不会删除照片）。"
+    },
+    "query_files": {
+      "name": "查询文件",
+      "description": "列出最近/全部/指定目录的文件（只读）。"
+    },
+    "delete_media": {
+      "name": "移入回收站",
+      "description": "把照片/视频移入回收站（可恢复），不会永久删除。"
+    },
+    "recover_media": {
+      "name": "恢复媒体",
+      "description": "从回收站恢复照片/视频。"
     }
   },
   "common": {

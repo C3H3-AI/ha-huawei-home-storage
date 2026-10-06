@@ -467,7 +467,7 @@ class HuaweiHomeStorageConfigFlow(
         #      两个条目指向同一台设备 → unique_id 完全相同 → HA 直接忽略第二个条目的
         #      全部设备实体（实测日志：
         #      "Platform huawei_home_storage does not generate unique IDs.
-        #       ID A4DEQ22A21000000_disk_slots already exists - ignoring ..."）。
+        #       ID SN-REDACTED_disk_slots already exists - ignoring ..."）。
         #   2. 一条目多账号本就是本集成的设计模型（accounts 列表 + 账号子设备）。
         # 因此「添加集成」在已有同设备条目时，等价于「配置 → 添加账号」。
         existing = self._entry_for_device(dev_id) if reauth_entry is None else None

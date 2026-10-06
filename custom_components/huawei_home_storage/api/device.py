@@ -32,6 +32,28 @@ from ..const import (
     API_RECYCLE,
     API_USB_STATUS,
     API_USER_DATA,
+    API_ONLINE_STATE,
+    API_DEVICE_INFO,
+    API_DEVICE_STATUS,
+    API_SAMBA_PUBLIC,
+    API_SAMBA_USER,
+    API_AUTO_UPGRADE,
+    API_WAN_INFO,
+    API_OPERATION_DEVICE,
+    API_DEV_ERR_CODE,
+    API_REPAIR_MODE_CHECK,
+    API_FILES_RECENT,
+    API_FILES_ALL,
+    API_PLUGIN_INSTALLED,
+    API_DUP_QUERY,
+    API_DUP_CTRL,
+    DUP_ACT_START,
+    DUP_ACT_STOP,
+    API_DEL_MEDIA,
+    API_RECOVER_MEDIA,
+    API_DEVICE_REBOOT,
+    API_DISK_SLEEP,
+    API_USB_PLUG_OUT,
     API_USER_MANAGE,
     DATA_DOWNLOAD_PATH,
     DATA_DOWNLOAD_QUERY,
@@ -364,6 +386,189 @@ class HuaweiDeviceClient:
     async def async_get_user_data(self) -> dict[str, Any]:
         """账号级容量统计（单位 MB）。"""
         return await self._request(API_USER_DATA)
+
+
+
+    async def async_get_online_state(self) -> dict[str, Any]:
+        """设备升级/固件状态。
+
+        实测返回（AS6020-02）：
+        ``{"SN": "SN-REDACTED", "Version": "6.1.0.7",
+           "UpdateState": 17, "CurrentUpgradeTime": "2026-09-10 04:24:59",
+           "IsSupportOnlineUpg": 4, ...}``
+        """
+        return await self._request(API_ONLINE_STATE)
+
+    async def async_get_device_info(self) -> dict[str, Any]:
+        """设备硬件/固件信息。
+
+        实测返回（AS6020-02）：
+        ``{"body": {"DeviceName": "AS6020-02", "CpuName": "realtek rtl1619b",
+           "CpuCores": 4, "Frequency": 1800000,
+           "SerialNumber": "SN-REDACTED", "SoftwareVersion": "6.1.0.7"},
+           "code": 0}``
+        注意payload在 ``body`` 下。
+        """
+        return await self._request(API_DEVICE_INFO)
+
+    async def async_get_device_status(self) -> dict[str, Any]:
+        """运行态指标（CPU 使用率 / 温度 / 内存）。
+
+        实测返回（AS6020-02）：
+        ``{"code": 0, "body": {"MemFree": 1417976, "MemTotal": 4000000,
+           "Cpuusage": 1, "Cputemp": 44}}``
+        注意 payload 在 ``body`` 下；CPU 使用率是百分比整数，温度单位摄氏度。
+        """
+        return await self._request(API_DEVICE_STATUS)
+
+    async def async_get_samba_public(self) -> dict[str, Any]:
+        """公共 Samba 共享状态。
+
+        实测：``{"Smb1Enable": true, "AnonymousEnable": true,
+        "Path": "Network_Share_Resource", "AudioShare": true, "version": "1"}``
+        """
+        return await self._request(API_SAMBA_PUBLIC)
+
+    async def async_get_samba_user(self) -> dict[str, Any]:
+        """用户 Samba 配置。
+
+        实测：``{"Enable": true, "AnonymousEnable": 1, "Path": "My_Document"}``
+        """
+        return await self._request(API_SAMBA_USER)
+
+    async def async_get_auto_upgrade(self) -> dict[str, Any]:
+        """自动升级配置。
+
+        实测：``{"Enable": true, "StartTime": "03:00", "EndTime": "05:00",
+        "LatestHotaTime": "2026-09-10 04:24:35"}``
+        """
+        return await self._request(API_AUTO_UPGRADE)
+
+    async def async_get_wan_info(self) -> dict[str, Any]:
+        """网络/WAN 信息（payload 在 ``body`` 下）。
+
+        实测含 ``IPv4Addr`` / ``IPv6Addr1`` / ``IPv6Gateway`` 等。
+        """
+        return await self._request(API_WAN_INFO)
+
+    async def async_get_operation_devices(self) -> dict[str, Any]:
+        """访问过设备的客户端列表。
+
+        实测：``{"operationDevice": [{"deviceId": "...",
+        "deviceName": "HUAWEI Pura 70 Ultra"}, ...]}``
+        """
+        return await self._request(API_OPERATION_DEVICE)
+
+    async def async_get_dev_err_code(self) -> dict[str, Any]:
+        """设备错误码。实测：``{"code": 0, "data": {"devErr": 0, "errorCode": 0}}``"""
+        return await self._request(API_DEV_ERR_CODE)
+
+    async def async_get_repair_mode(self) -> dict[str, Any]:
+        """维修模式。实测：``{"code": 0, "data": {"mode": 0}}``"""
+        return await self._request(API_REPAIR_MODE_CHECK)
+
+    async def async_get_recent_files(
+        self, offset: int = 0, limit: int = 20
+    ) -> dict[str, Any]:
+        """最近文件记录。
+
+        实测：``{"data": {"hasMore": true, "offset": 10, "records": [
+        {"name": "20131213212803739.JPG", "mime": "image/jpeg",
+         "mtime": 1386987493000, "action": 4, ...}]}}``
+        """
+        return await self._request(API_FILES_RECENT, {"offset": offset, "limit": limit})
+
+    async def async_get_all_files(
+        self, offset: int = 0, limit: int = 20
+    ) -> dict[str, Any]:
+        """全部文件视图。实测：``{"data": {"files": [], "hasMore": false}}``"""
+        return await self._request(API_FILES_ALL, {"offset": offset, "limit": limit})
+
+    async def async_get_installed_plugins(self) -> dict[str, Any]:
+        """已安装的设备插件。
+
+        实测：``{"code": 0, "data": {"hapInfos": [{"appId": "...",
+        "name": "...", "installTime": "2022-11-29 23:23:58", ...}]}}``
+        """
+        return await self._request(API_PLUGIN_INSTALLED)
+
+    async def async_query_duplicate_scan(
+        self, task_id: int = 0, offset: int = 0, limit: int = 20, filter_: int = 0
+    ) -> dict[str, Any]:
+        """查询重复照片扫描结果（POST，只读）。
+
+        实测：``{"code": 0, "data": {"fileInfo": [], "scanCount": 0,
+        "scanTotal": 0, "scanTaskStatus": 0, "mergeCount": 0,
+        "mergeTaskStatus": 0, "lastMergeTime": 0, ...}}``
+        """
+        return await self._request(
+            API_DUP_QUERY,
+            json_body={
+                "taskId": task_id,
+                "offset": offset,
+                "limit": limit,
+                "filter": filter_,
+            },
+            method="POST",
+        )
+
+    async def async_ctrl_duplicate_scan(self, act: str, task_id: int = 0) -> dict[str, Any]:
+        """启动/停止重复照片扫描（POST）。
+
+        ``act`` 取 ``DUP_ACT_START`` / ``DUP_ACT_STOP``。
+        实测 stop：``{"code": 0, "data": {"code": 0, "taskId": 0}, "des": "suc"}``
+        """
+        return await self._request(
+            API_DUP_CTRL,
+            json_body={"actType": act, "taskId": task_id},
+            method="POST",
+        )
+
+    async def async_delete_media(self, file_ids: list[str]) -> dict[str, Any]:
+        """把照片/视频移入回收站（**可逆**，不是永久删除）。
+
+        参数 ``membs`` 为文件 id 列表。删完可在「最近删除」里用
+        :meth:`async_recover_media` 恢复。集成**永不**调用 cleanBin。
+        """
+        return await self._request(
+            API_DEL_MEDIA,
+            method="POST",
+            json_body={
+                "membs": [{"id": fid} for fid in file_ids],
+                "clientType": 1,
+                "userId": "1",
+                "empty": 0,
+            },
+        )
+
+    async def async_recover_media(self, file_ids: list[str]) -> dict[str, Any]:
+        """从回收站恢复照片/视频。"""
+        return await self._request(
+            API_RECOVER_MEDIA,
+            method="POST",
+            json_body={
+                "membs": [{"id": fid} for fid in file_ids],
+                "clientType": 1,
+                "userId": "1",
+                "empty": 0,
+            },
+        )
+
+    async def async_post_device_reboot(self) -> dict[str, Any]:
+        """重启设备（POST）。
+
+        可恢复，但会中断服务约 1-2 分钟，期间设备不可用。
+        仅由用户显式点击按钮触发，集成绝不自动重启。
+        """
+        return await self._request(API_DEVICE_REBOOT, method="POST")
+
+    async def async_post_disk_sleep(self) -> dict[str, Any]:
+        """磁盘休眠（POST）。会暂停磁盘，属可恢复操作。"""
+        return await self._request(API_DISK_SLEEP, method="POST")
+
+    async def async_post_usb_plug_out(self) -> dict[str, Any]:
+        """弹出 USB 设备（POST）。可恢复操作。"""
+        return await self._request(API_USB_PLUG_OUT, method="POST")
 
     async def async_get_device_users(self) -> list[dict[str, Any]]:
         """设备上的全部用户（管理员 + 家庭成员）。

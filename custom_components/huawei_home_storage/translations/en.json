@@ -249,6 +249,81 @@
       },
       "disk_slot_used": {
         "name": "Disk {slot} used"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      },
+      "upgrade_state": {
+        "name": "Upgrade state"
+      },
+      "cpu_model": {
+        "name": "CPU model"
+      },
+      "cpu_cores": {
+        "name": "CPU cores"
+      },
+      "serial_number": {
+        "name": "Serial number"
+      },
+      "cpu_usage": {
+        "name": "CPU usage"
+      },
+      "cpu_temperature": {
+        "name": "CPU temperature"
+      },
+      "memory_total": {
+        "name": "Memory total"
+      },
+      "memory_used": {
+        "name": "Memory used"
+      },
+      "duplicate_photos": {
+        "name": "Duplicate photos"
+      },
+      "duplicate_scan_status": {
+        "name": "Duplicate scan status"
+      },
+      "samba_public_enabled": {
+        "name": "Public Samba share"
+      },
+      "samba_user_enabled": {
+        "name": "User Samba share"
+      },
+      "auto_upgrade": {
+        "name": "Auto upgrade"
+      },
+      "auto_upgrade_window": {
+        "name": "Auto upgrade window"
+      },
+      "ipv4_address": {
+        "name": "IPv4 address"
+      },
+      "ipv6_address": {
+        "name": "IPv6 address"
+      },
+      "operation_devices": {
+        "name": "Client devices"
+      },
+      "error_code": {
+        "name": "Device error code"
+      },
+      "repair_mode": {
+        "name": "Repair mode"
+      },
+      "recent_files": {
+        "name": "Recent files"
+      },
+      "all_files": {
+        "name": "All files"
+      },
+      "installed_plugins": {
+        "name": "Installed plugins"
+      },
+      "disk_used_percent": {
+        "name": "Disk usage"
+      },
+      "disk_error": {
+        "name": "Disk error"
       }
     },
     "binary_sensor": {
@@ -257,6 +332,17 @@
       },
       "usb": {
         "name": "USB device"
+      }
+    },
+    "button": {
+      "disk_sleep": {
+        "name": "Disk sleep"
+      },
+      "usb_plug_out": {
+        "name": "Eject USB"
+      },
+      "device_reboot": {
+        "name": "Reboot device"
       }
     }
   },
@@ -270,6 +356,22 @@
           "description": "Leave empty to target the first configured device."
         }
       }
+    },
+    "duplicate_scan": {
+      "name": "Duplicate photo scan",
+      "description": "Start or stop duplicate photo scan (never deletes photos)."
+    },
+    "query_files": {
+      "name": "Query files",
+      "description": "List recent/all/directory files (read-only)."
+    },
+    "delete_media": {
+      "name": "Move media to trash",
+      "description": "Move photos/videos to the recycle bin (recoverable)."
+    },
+    "recover_media": {
+      "name": "Recover media",
+      "description": "Restore photos/videos from the recycle bin."
     }
   },
   "common": {

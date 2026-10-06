@@ -84,6 +84,7 @@ class HuaweiStorageData:
     fast: HuaweiFastCoordinator
     albums: HuaweiAlbumCoordinator
     title: str
+    info: "HuaweiInfoCoordinator | None" = None
     #: 主设备（按物理序列号）的 device_id。多账号共用同一台，实体据此挂载。
     main_device_id: str | None = None
     #: 本条目是否是该物理设备的**主条目**（同一台设备有多个账号时只让一个
@@ -183,6 +184,7 @@ class HuaweiFastCoordinator(_HuaweiBaseCoordinator):
             "user_data": None,
             "usb": None,
             "device_users": None,
+            "device_status": None,
         }
         data["online"] = await self._run("心跳", self.client.async_heartbeat())
 
@@ -191,10 +193,11 @@ class HuaweiFastCoordinator(_HuaweiBaseCoordinator):
             self._run("账号容量", self.client.async_get_user_data()),
             self._run("USB", self.client.async_get_usb_status()),
             self._run("设备用户", self._async_fetch_device_users()),
+            self._run("运行状态", self.client.async_get_device_status()),
             return_exceptions=True,
         )
         for key, result in zip(
-            ("disk", "user_data", "usb", "device_users"), results
+            ("disk", "user_data", "usb", "device_users", "device_status"), results
         ):
             if isinstance(result, BaseException):
                 # 单项失败不应拖垮其它实体：沿用上一轮的值
@@ -211,6 +214,69 @@ class HuaweiFastCoordinator(_HuaweiBaseCoordinator):
         """
         data = await self.client.async_get_device_users()
         return data if isinstance(data, list) else []
+
+
+
+
+class HuaweiInfoCoordinator(_HuaweiBaseCoordinator):
+    """静态/低频信息（10 分钟）：固件、硬件、Samba、网络、健康、文件与插件统计。
+
+    这些端点单个都轻，但加起来有 8 个；不放 fast（1 分钟）是为了避免
+    请求风暴触发设备会话保护（2026-10-06 教训：fast 20 请求/分钟导致
+    gallery 域 16106，见逆向笔记 9.3）。
+    """
+
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, client: HuaweiDeviceClient
+    ) -> None:
+        super().__init__(
+            hass, entry, client, name="info", minutes=SCAN_INTERVAL_SLOW_MINUTES
+        )
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "online_state": None,
+            "device_info": None,
+            "samba_public": None,
+            "samba_user": None,
+            "auto_upgrade": None,
+            "wan_info": None,
+            "operation_devices": None,
+            "dev_err": None,
+            "repair_mode": None,
+            "recent_files": None,
+            "all_files": None,
+            "plugins": None,
+        }
+        results = await asyncio.gather(
+            self._run("升级状态", self.client.async_get_online_state()),
+            self._run("设备信息", self.client.async_get_device_info()),
+            self._run("公共Samba", self.client.async_get_samba_public()),
+            self._run("用户Samba", self.client.async_get_samba_user()),
+            self._run("自动升级", self.client.async_get_auto_upgrade()),
+            self._run("网络信息", self.client.async_get_wan_info()),
+            self._run("访问设备", self.client.async_get_operation_devices()),
+            self._run("错误码", self.client.async_get_dev_err_code()),
+            self._run("维修模式", self.client.async_get_repair_mode()),
+            self._run("最近文件", self.client.async_get_recent_files()),
+            self._run("全部文件", self.client.async_get_all_files()),
+            self._run("已装插件", self.client.async_get_installed_plugins()),
+            return_exceptions=True,
+        )
+        for key, result in zip(
+            (
+                "online_state", "device_info", "samba_public", "samba_user",
+                "auto_upgrade", "wan_info", "operation_devices", "dev_err",
+                "repair_mode", "recent_files", "all_files", "plugins",
+            ),
+            results,
+        ):
+            if isinstance(result, BaseException):
+                data[key] = (self.data or {}).get(key)
+                _LOGGER.debug("%s 本轮不可用: %s", key, result)
+            else:
+                data[key] = result
+        return data
 
 
 class HuaweiAlbumCoordinator(_HuaweiBaseCoordinator):
