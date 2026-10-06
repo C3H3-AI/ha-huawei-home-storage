@@ -18,7 +18,11 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory, UnitOfInformation
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfInformation,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -44,6 +48,8 @@ class HuaweiSensorDescription(HuaweiStorageEntityDescription, SensorEntityDescri
     """Describes a Huawei Home Storage sensor."""
 
     value_fn: Callable[[dict[str, Any]], Any]
+    attrs_fn: Callable[[dict[str, Any]], Any] | None = None
+    """可选附加属性（文件名/插件名列表），写进实体 attributes。"""
     data_key: str = "albums"
     """从哪个协调器取数据：``albums``（慢）或 ``fast``。"""
     unique_suffix: str = ""
@@ -108,6 +114,167 @@ def _device_admin_count(data: dict[str, Any]) -> int | None:
 def _account_quota_used(data: dict[str, Any]) -> int | None:
     """当前账号在该设备上占用的空间（MB → 字节）。"""
     return megabytes_to_bytes((data.get("user_data") or {}).get("usedSize"))
+
+
+
+def _firmware_version(data: dict[str, Any]) -> str | None:
+    """``/cfg/system/onlinestate`` 的 ``Version``（实测 "6.1.0.7"）。
+
+    比 update 服务的 ``version``（该设备上恒为 "NoVersion"）可靠；
+    实测该设备两个来源：onlinestate=6.1.0.7，update.version=NoVersion。
+    """
+    version = (data.get("online_state") or {}).get("Version")
+    if not version or version in ("NoVersion", "0", 0):
+        return None
+    return str(version)
+
+
+def _upgrade_state(data: dict[str, Any]) -> str | None:
+    """``/cfg/system/onlinestate`` 的 ``UpdateState``（实测 17）。
+
+    ``CurrentUpgradeTime`` 实测 "2026-09-10 04:24:59"，UpdateState 语义
+    未全部验证，故按原始值上报，不做映射。
+    """
+    state = (data.get("online_state") or {}).get("UpdateState")
+    return None if state is None else str(state)
+
+
+def _device_info_field(field: str) -> Callable[[dict[str, Any]], Any]:
+    """``/cfg/system/device_info`` 的字段（payload 在 ``body`` 下）。"""
+
+    def _get(data: dict[str, Any]) -> Any:
+        value = ((data.get("device_info") or {}).get("body") or {}).get(field)
+        return None if value in (None, "") else value
+
+    return _get
+
+
+def _status_field(field: str) -> Callable[[dict[str, Any]], Any]:
+    """``/cfg/system/device_status`` 的运行态字段（payload 在 ``body`` 下）。"""
+
+    def _get(data: dict[str, Any]) -> Any:
+        value = ((data.get("device_status") or {}).get("body") or {}).get(field)
+        return None if value is None else value
+
+    return _get
+
+
+def _memory(field: str) -> Callable[[dict[str, Any]], Any]:
+    """内存字段（``MemTotal`` / ``MemFree``，单位 kB → 字节）。"""
+
+    def _get(data: dict[str, Any]) -> int | None:
+        body = (data.get("device_status") or {}).get("body") or {}
+        value = body.get(field)
+        if value is None:
+            return None
+        try:
+            return int(value) * 1024
+        except (TypeError, ValueError):
+            return None
+
+    return _get
+
+
+def _memory_used(data: dict[str, Any]) -> int | None:
+    """已用内存 = MemTotal - MemFree（均为 kB）。"""
+    body = (data.get("device_status") or {}).get("body") or {}
+    total, free = body.get("MemTotal"), body.get("MemFree")
+    if total is None or free is None:
+        return None
+    try:
+        return max(int(total) - int(free), 0) * 1024
+    except (TypeError, ValueError):
+        return None
+
+
+def _recent_file_names(data: dict[str, Any]) -> list[str] | None:
+    """最近文件的文件名列表（供实体 attributes 展示）。"""
+    records = ((data.get("recent_files") or {}).get("data") or {}).get("records")
+    if not isinstance(records, list):
+        return None
+    return [r.get("name") for r in records if isinstance(r, dict) and r.get("name")][:20]
+
+
+def _plugin_names(data: dict[str, Any]) -> list[str] | None:
+    """已装插件的名称列表。"""
+    infos = ((data.get("plugins") or {}).get("data") or {}).get("hapInfos")
+    if not isinstance(infos, list):
+        return None
+    return [p.get("name") for p in infos if isinstance(p, dict) and p.get("name")][:20]
+
+
+def _data_len(key: str, field: str) -> Callable[[dict[str, Any]], Any]:
+    """``data[key]["data"][field]`` 是列表时取其长度（None 表示不可用）。"""
+
+    def _get(data: dict[str, Any]) -> int | None:
+        value = ((data.get(key) or {}).get("data") or {}).get(field)
+        return len(value) if isinstance(value, list) else None
+
+    return _get
+
+
+def _recent_files_count(data: dict[str, Any]) -> int | None:
+    """最近文件条数（``data["recent_files"]["data"]["records"]``）。"""
+    return _data_len("recent_files", "records")(data)
+
+
+def _all_files_count(data: dict[str, Any]) -> int | None:
+    """全部文件条数。"""
+    return _data_len("all_files", "files")(data)
+
+
+def _plugin_count(data: dict[str, Any]) -> int | None:
+    """已装插件数量（插件列表在 ``data["plugins"]["data"]["hapInfos"]``）。"""
+    return _data_len("plugins", "hapInfos")(data)
+
+
+def _plain(key: str, field: str) -> Callable[[dict[str, Any]], Any]:
+    """简单取值：``data[key][field]``。"""
+    return lambda data: (data.get(key) or {}).get(field)
+
+
+def _nested(key: str, field: str) -> Callable[[dict[str, Any]], Any]:
+    """取值：``data[key]["body"][field]``。"""
+    return lambda data: ((data.get(key) or {}).get("body") or {}).get(field)
+
+
+def _dev_err(field: str) -> Callable[[dict[str, Any]], Any]:
+    """设备错误码：``data["dev_err"]["data"][field]``。"""
+    return lambda data: ((data.get("dev_err") or {}).get("data") or {}).get(field)
+
+
+def _repair_mode(data: dict[str, Any]) -> Any:
+    """维修模式：``data["repair_mode"]["data"]["mode"]``（0 = 正常）。"""
+    return ((data.get("repair_mode") or {}).get("data") or {}).get("mode")
+
+
+def _operation_device_count(data: dict[str, Any]) -> int | None:
+    """访问过设备的客户端数量。"""
+    devices = (data.get("operation_devices") or {}).get("operationDevice")
+    return len(devices) if isinstance(devices, list) else None
+
+
+def _auto_upgrade_window(data: dict[str, Any]) -> str | None:
+    """自动升级时段，形如 ``03:00-05:00``。"""
+    cfg = data.get("auto_upgrade") or {}
+    start, end = cfg.get("StartTime"), cfg.get("EndTime")
+    if start and end:
+        return f"{start}-{end}"
+    return None
+
+
+def _dup_field(field: str) -> Callable[[dict[str, Any]], Any]:
+    """重复照片统计（``queryDuplicateScanData`` 的 ``data`` 下）。
+
+    实测：``{"code": 0, "data": {"scanCount": 0, "scanTotal": 0,
+    "scanTaskStatus": 0, "mergeCount": 0, ...}}``
+    """
+
+    def _get(data: dict[str, Any]) -> Any:
+        value = ((data.get("dup") or {}).get("data") or {}).get(field)
+        return None if value is None else value
+
+    return _get
 
 
 SENSORS: tuple[HuaweiSensorDescription, ...] = (
@@ -279,7 +446,260 @@ SENSORS: tuple[HuaweiSensorDescription, ...] = (
             else None
         ),
     ),
+    HuaweiSensorDescription(
+        key="firmware_version",
+        scope=DEVICE_SCOPE,
+        translation_key="firmware_version",
+        icon="mdi:chip",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_firmware_version,
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="upgrade_state",
+        scope=DEVICE_SCOPE,
+        translation_key="upgrade_state",
+        icon="mdi:update",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_upgrade_state,
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="cpu_model",
+        scope=DEVICE_SCOPE,
+        translation_key="cpu_model",
+        icon="mdi:cpu-64-bit",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_device_info_field("CpuName"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="cpu_cores",
+        scope=DEVICE_SCOPE,
+        translation_key="cpu_cores",
+        icon="mdi:cpu-64-bit",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_device_info_field("CpuCores"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="serial_number",
+        scope=DEVICE_SCOPE,
+        translation_key="serial_number",
+        icon="mdi:identifier",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_device_info_field("SerialNumber"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="cpu_usage",
+        scope=DEVICE_SCOPE,
+        translation_key="cpu_usage",
+        icon="mdi:cpu-64-bit",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        data_key="fast",
+        value_fn=_status_field("Cpuusage"),
+    ),
+        HuaweiSensorDescription(
+        key="cpu_temperature",
+        scope=DEVICE_SCOPE,
+        translation_key="cpu_temperature",
+        icon="mdi:thermometer",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        data_key="fast",
+        value_fn=_status_field("Cputemp"),
+    ),
+        HuaweiSensorDescription(
+        key="memory_total",
+        scope=DEVICE_SCOPE,
+        translation_key="memory_total",
+        icon="mdi:memory",
+        native_unit_of_measurement=UnitOfInformation.BYTES,
+        device_class=SensorDeviceClass.DATA_SIZE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        data_key="fast",
+        value_fn=_memory("MemTotal"),
+    ),
+        HuaweiSensorDescription(
+        key="memory_used",
+        scope=DEVICE_SCOPE,
+        translation_key="memory_used",
+        icon="mdi:memory",
+        native_unit_of_measurement=UnitOfInformation.BYTES,
+        device_class=SensorDeviceClass.DATA_SIZE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        data_key="fast",
+        value_fn=_memory_used,
+    ),
+        HuaweiSensorDescription(
+        key="duplicate_photos",
+        translation_key="duplicate_photos",
+        icon="mdi:image-multiple-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        data_key="albums",
+        value_fn=_dup_field("scanCount"),
+    ),
+        HuaweiSensorDescription(
+        key="duplicate_scan_status",
+        translation_key="duplicate_scan_status",
+        icon="mdi:magnify-scan",
+        data_key="albums",
+        value_fn=_dup_field("scanTaskStatus"),
+    ),
+        HuaweiSensorDescription(
+        key="samba_public_enabled",
+        scope=DEVICE_SCOPE,
+        translation_key="samba_public_enabled",
+        icon="mdi:folder-network",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_plain("samba_public", "AnonymousEnable"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="samba_user_enabled",
+        translation_key="samba_user_enabled",
+        icon="mdi:folder-network-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_plain("samba_user", "Enable"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="auto_upgrade",
+        scope=DEVICE_SCOPE,
+        translation_key="auto_upgrade",
+        icon="mdi:update",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_plain("auto_upgrade", "Enable"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="auto_upgrade_window",
+        scope=DEVICE_SCOPE,
+        translation_key="auto_upgrade_window",
+        icon="mdi:clock-time-four",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_auto_upgrade_window,
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="ipv4_address",
+        scope=DEVICE_SCOPE,
+        translation_key="ipv4_address",
+        icon="mdi:ip-network",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_nested("wan_info", "IPv4Addr"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="ipv6_address",
+        scope=DEVICE_SCOPE,
+        translation_key="ipv6_address",
+        icon="mdi:ip-network-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_nested("wan_info", "IPv6Addr2"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="operation_devices",
+        scope=DEVICE_SCOPE,
+        translation_key="operation_devices",
+        icon="mdi:devices",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_operation_device_count,
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="error_code",
+        scope=DEVICE_SCOPE,
+        translation_key="error_code",
+        icon="mdi:alert-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_dev_err("errorCode"),
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="repair_mode",
+        scope=DEVICE_SCOPE,
+        translation_key="repair_mode",
+        icon="mdi:wrench",
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_repair_mode,
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="recent_files",
+        translation_key="recent_files",
+        icon="mdi:history",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_recent_files_count,
+        attrs_fn=_recent_file_names,
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="all_files",
+        translation_key="all_files",
+        icon="mdi:file-multiple",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+
+        value_fn=_all_files_count,
+        data_key="info",
+    ),
+        HuaweiSensorDescription(
+        key="installed_plugins",
+        scope=DEVICE_SCOPE,
+        translation_key="installed_plugins",
+        icon="mdi:puzzle",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        data_key="info",
+        value_fn=_plugin_count,
+        attrs_fn=_plugin_names,
+    ),
 )
+
+
+def _pick_coordinator(
+    runtime: "HuaweiStorageData", description: Any, fallback: Any = None
+) -> Any:
+    """按 description.data_key 选协调器。
+
+    ``info`` = 低频静态信息（固件/硬件/Samba/网络/统计），
+    ``fast`` = 1 分钟运行态，其余（默认 ``albums``）走相册协调器。
+    """
+    key = description.data_key
+    if key == "fast":
+        return runtime.fast
+    if key == "info":
+        return runtime.info or fallback or runtime.albums
+    return fallback if fallback is not None else runtime.albums
 
 
 async def async_setup_entry(
@@ -301,7 +721,7 @@ async def async_setup_entry(
     for description in SENSORS:
         if description.scope != DEVICE_SCOPE:
             continue
-        coordinator = runtime.fast if description.data_key == "fast" else runtime.albums
+        coordinator = _pick_coordinator(runtime, description)
         entities.append(HuaweiHomeStorageSensor(coordinator, description, runtime))
 
     # 2) 盘位设备（物理属性，用硬盘序列号去重）
@@ -316,7 +736,7 @@ async def async_setup_entry(
             if description.scope != ACCOUNT_SCOPE:
                 continue
             coordinator_for_desc = (
-                runtime.fast if description.data_key == "fast" else coordinator
+                _pick_coordinator(runtime, description, fallback=coordinator)
             )
             entities.append(
                 HuaweiHomeStorageSensor(
@@ -419,3 +839,19 @@ class HuaweiHomeStorageSensor(HuaweiStorageEntity, SensorEntity):
         if not self.coordinator.data:
             return None
         return self.entity_description.value_fn(self.coordinator.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """附加属性（如最近文件/插件名列表）。"""
+        fn = getattr(self.entity_description, "attrs_fn", None)
+        if fn is None or not self.coordinator.data:
+            return None
+        try:
+            value = fn(self.coordinator.data)
+        except Exception:  # noqa: BLE001
+            return None
+        if isinstance(value, list):
+            return {"items": value}
+        if isinstance(value, dict):
+            return value
+        return None

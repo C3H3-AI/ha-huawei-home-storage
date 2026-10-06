@@ -42,6 +42,7 @@ from .const import (
 from .coordinator import (
     HuaweiAlbumCoordinator,
     HuaweiFastCoordinator,
+    HuaweiInfoCoordinator,
     HuaweiStorageData,
 )
 from .entity import _account_key, main_device_identifier, main_device_info
@@ -357,12 +358,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: HuaweiConfigEntry) -> bo
 
     fast = HuaweiFastCoordinator(hass, entry, client)
     albums = HuaweiAlbumCoordinator(hass, entry, client)
+    info = HuaweiInfoCoordinator(hass, entry, client)
     runtime = HuaweiStorageData(
         client=client,
         fast=fast,
         albums=albums,
         title=entry.title,
         is_primary=True,
+       info=info,
     )
     runtime.accounts = list(accounts)
     # 主账号的协调器也用**真实账号 key** 索引，避免出现 "" 这个特殊键
@@ -394,6 +397,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: HuaweiConfigEntry) -> bo
     # 快协调器首次刷新会建立设备会话，随后各账号的相册协调器复用各自会话。
     # 快协调器失败 = 设备真的连不上，整个条目应当重试。
     await fast.async_config_entry_first_refresh()
+
+    # 低频信息协调器（固件/硬件/Samba/网络/健康/统计）：失败不影响核心功能。
+    if info is not None:
+        try:
+            await info.async_config_entry_first_refresh()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("设备信息拉取失败（不影响其它功能）: %s", err)
 
     # 各账号的相册协调器：彼此独立，任何一个失败都不影响其它账号，
     # 也不影响设备级实体（磁盘/在线/USB/文件空间）。

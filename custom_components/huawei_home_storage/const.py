@@ -7,7 +7,11 @@ DOMAIN = "huawei_home_storage"
 MANUFACTURER = "Huawei"
 MODEL = "Home Storage (AS6020-02)"
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+]
 
 # ---------------------------------------------------------------------------
 # 配置条目数据键
@@ -98,6 +102,29 @@ API_USB_STATUS = "/filesvc/usbStatus"
 API_DISK_CHANGE = "/devmanage/diskChange"
 API_USER_MANAGE = "/account/userManageInfo"
 API_USER_DATA = "/account/userDataStatisInfo"
+# ---- 扩展能力（实测可用性见逆向笔记第 8 节）----
+API_ONLINE_STATE = "/cfg/system/onlinestate"          # 固件/升级状态
+API_DEVICE_INFO = "/cfg/system/device_info"           # CPU/序列号
+API_DEVICE_STATUS = "/cfg/system/device_status"       # 运行态(CPU/温度/内存)
+API_SAMBA_PUBLIC = "/api/app/publicsamba"
+API_SAMBA_USER = "/api/app/usersamba"
+API_AUTO_UPGRADE = "/cfg/system/autoupgrade"
+API_WAN_INFO = "/cfg/system/wan_info_tmp"
+API_OPERATION_DEVICE = "/dfx/getOperationDevice"
+API_DEV_ERR_CODE = "/devmanage/devErrCode"
+API_REPAIR_MODE_CHECK = "/devmanage/repairModeCheck"
+API_FILES_RECENT = "/filesvc/recent"
+API_FILES_ALL = "/filesvc/allFiles"
+API_PLUGIN_INSTALLED = "/acelite/installed_infos"
+API_DUP_QUERY = "/gallery/queryDuplicateScanData"
+API_DUP_CTRL = "/gallery/ctrlDuplicateScanTask"
+DUP_ACT_START = "start"
+DUP_ACT_STOP = "stop"
+API_DEL_MEDIA = "/gallery/delFile"                    # 进回收站(可逆)
+API_RECOVER_MEDIA = "/gallery/recoverFile"            # 恢复
+API_DEVICE_REBOOT = "/devmanage/deviceReboot"         # 用户显式触发
+API_DISK_SLEEP = "/devmanage/diskSleep"
+API_USB_PLUG_OUT = "/devmanage/usbPlugOut"
 
 PHOTO_PAGE_SIZE = 500               # getIncPhotosInfoTable 固定每页 500
 
