@@ -58,6 +58,29 @@ def _mask(value: str | None) -> str:
     return value if len(value) <= 7 else f"{value[:3]}****{value[-4:]}"
 
 
+def find_main_device(registry: Any, identifier: str) -> Any:
+    """按 ``(DOMAIN, identifier)`` 查主设备，返回 ``DeviceEntry | None``。
+
+    为什么要单独包一层：``DeviceRegistry.async_get_device`` 自 HA 2026.10 起
+    被弃用（2027.8.0 移除），替代品是 ``async_get_devices``。但本集成声明
+    支持 HA ≥ 2024.7.0，旧版本上没有 ``async_get_devices``，所以做**能力探测**
+    而不是直接改用新 API（否则老版本用户会 AttributeError）。
+
+    语义与旧调用一致：**跨配置条目**查找。这点很关键 —— 同一台物理设备被多个
+    华为账号接入时，主设备由**第一个**条目创建，后续条目的实体仍要找到并挂到
+    它下面；若改用 `async_get_device_by_identifier`（按 config_entry_id 限定）
+    就会查不到别家条目创建的设备，设备树会断开、退回「一个账号一台设备」的
+    老问题（这正是早前修复过的 device_id 耦合缺陷）。
+
+    返回多个匹配时取第一个，与旧 ``async_get_device`` 在无歧义场景下的行为一致。
+    """
+    if hasattr(registry, "async_get_devices"):  # HA 2026.10+
+        matches = registry.async_get_devices(identifiers={(DOMAIN, identifier)})
+        return matches[0] if matches else None
+    # 老版本回退（HA < 2026.10）：新 API 不存在，只能用旧 API
+    return registry.async_get_device(identifiers={(DOMAIN, identifier)})
+
+
 def _account_key(account: dict[str, Any] | None) -> str:
     """账号在条目内的稳定标识（unique_id / 协调器索引共用）。"""
     if not account:
@@ -187,9 +210,7 @@ class HuaweiStorageEntity(CoordinatorEntity["_HuaweiBaseCoordinator"]):
         from homeassistant.helpers import device_registry as dr
 
         registry = dr.async_get(self.hass)
-        main = registry.async_get_device(
-            identifiers={(DOMAIN, main_device_identifier(self._entry)[0])}
-        )
+        main = find_main_device(registry, main_device_identifier(self._entry)[0])
         if main is None:
             return
         info = dict(self._attr_device_info or {})
