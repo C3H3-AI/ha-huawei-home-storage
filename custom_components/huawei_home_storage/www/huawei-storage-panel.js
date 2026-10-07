@@ -438,7 +438,9 @@ function openViewer(full, name, meta){
   v.addEventListener("click",(e)=>{
     if(e.target===v || e.target.closest("[data-close]")) v.remove();
   });
-  document.body.appendChild(v);
+  /* 必须挂在面板 shadow 内：.viewer 的样式在 shadow 里，挂到 document.body 会丢样式
+     （表现为大图不是全屏遮罩而是排在页面下方） */
+  (window.__hs_panel&&window.__hs_panel.shadowRoot||document.body).appendChild(v);
 }
 
 function renderDevice(d){
