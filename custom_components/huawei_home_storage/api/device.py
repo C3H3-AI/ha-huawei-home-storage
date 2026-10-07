@@ -69,7 +69,7 @@ from ..const import (
     FILES_PAGE_SIZE,
     REQUEST_TIMEOUT,
 )
-from .huawei_cloud import DeviceCredentials, HuaweiCloudError
+from .huawei_cloud import DeviceCredentials, HuaweiCloudAuthError, HuaweiCloudError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -182,8 +182,19 @@ class HuaweiDeviceClient:
         async with self._lock:
             try:
                 creds = await self._creds_provider()
-            except HuaweiCloudError as err:
+            except HuaweiCloudAuthError as err:
+                # 凭据/授权真的失效（refresh_token 过期、缺 token）：
+                # 只有这种情况才该让 HA 弹重新认证。
                 raise HuaweiDeviceAuthError(f"获取设备凭据失败: {err}") from err
+            except HuaweiCloudError as err:
+                # 其它云侧故障（MQTT 超时、链路被截断、响应非 JSON 等）都是
+                # **瞬时/设备侧**问题，不是凭据失效。
+                #
+                # ⚠️ 这里曾把所有 HuaweiCloudError 都归为 AuthError，后果是：
+                # 一次 MQTT 超时就会变成 ConfigEntryAuthFailed → HA 弹出
+                # 「重新认证」，要求用户重输账号密码，而其实下一轮轮询就自愈了。
+                # 归为 DeviceError 后会走 UpdateFailed → 协调器优雅降级 + 下轮重试。
+                raise HuaweiDeviceError(f"获取设备凭据失败（可重试）: {err}") from err
             # httpsUrl 形如 https://<host>:<port>/，端口是**本会话专属隧道**，
             # 必须整条采用（每个账号的端口不同，8471 只是第一个账号的默认值）
             if creds.https_url:
