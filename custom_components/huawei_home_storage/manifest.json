@@ -17,5 +17,5 @@
     "custom_components.huawei_home_storage"
   ],
   "requirements": [],
-  "version": "0.9.0"
+  "version": "0.9.1"
 }
