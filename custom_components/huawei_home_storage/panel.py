@@ -13,12 +13,21 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+import json as _json
+try:
+    version = _json.loads(
+        (Path(__file__).parent / "manifest.json").read_text()
+    ).get("version", "0")
+except Exception:  # noqa: BLE001
+    version = "0"
+
 PANEL_URL_PATH = "huawei-storage"
 PANEL_TITLE = "家庭存储"
 PANEL_ICON = "mdi:nas"
 PANEL_WEBCOMPONENT = "huawei-storage-panel"
 STATIC_URL = f"/{DOMAIN}"
-PANEL_MODULE_URL = f"{STATIC_URL}/huawei-storage-panel.js"
+# 带集成版本号做缓存穿透：升级面板代码后浏览器不会用旧缓存
+PANEL_MODULE_URL = f"{STATIC_URL}/huawei-storage-panel.js?v={version}"
 WWW_DIR = Path(__file__).parent / "www"
 PANEL_FLAG = f"{DOMAIN}_panel_registered"
 
