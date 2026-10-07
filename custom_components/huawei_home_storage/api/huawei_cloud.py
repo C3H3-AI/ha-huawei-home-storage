@@ -186,7 +186,21 @@ def decrypt_credentials(
     start = text.find("{")
     if start < 0:
         raise HuaweiCloudError(f"解密结果不是 JSON: {text[:120]!r}")
-    creds, _ = json.JSONDecoder().raw_decode(text[start:])
+    try:
+        creds, _ = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError as err:
+        # 明文里确实有 '{' 但后续不是合法 JSON：解出的密钥不对（ECDH/AES 状态
+        # 不匹配）或设备返回被截断。属**瞬时 / 设备侧**故障，不是凭据失效。
+        #
+        # 这里必须显式包装：JSONDecodeError 不是 HuaweiCloudError，
+        # 会逃出 device.py 的 `except HuaweiCloudError` 分类，冒泡到
+        # DataUpdateCoordinator 变成 "Unexpected error fetching ..."，
+        # 绕过各协调器自己的降级分支（实测：相册协调器整条硬失败）。
+        #
+        # 刻意不记录明文内容（可能含下发的凭据），只记长度。
+        raise HuaweiCloudError(
+            f"解密结果 JSON 解析失败（明文 {len(text)} 字节，未记录内容）: {err}"
+        ) from err
     return creds
 
 
