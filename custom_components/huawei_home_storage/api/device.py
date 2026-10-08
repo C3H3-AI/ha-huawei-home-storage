@@ -1136,11 +1136,14 @@ class HuaweiDeviceClient:
     ) -> list[dict[str, Any]]:
         """查传输任务中心（只读）。
 
-        ``service`` 取 ``filesvc``（文件空间，``taskType`` 400 段）或
-        ``trans``（跨服务传输，含 201/300 段）。返回任务列表，每项含
-        ``originObjectName``（源名）、``destination``（目标目录）、
-        ``objectType``（0 文件 / 1 目录 / 2 相册对象）、``progress``、
-        ``transId``。实测 2026-10-08。
+        ``service`` 取 ``filesvc`` / ``trans`` / ``gallery``，端点都是
+        ``/<service>/getAllTaskStatus``。每项含 ``taskId``、``originObjectName``
+        （源名）、``destination``（目标目录）、``objectType``（0 文件 / 1 目录 /
+        2 相册对象）、``progress``、``errorInfo``、``transId``。
+
+        ⚠️ ``taskTypes`` **必须给全段**，否则只能拿到一小部分（实测 2026-10-09）：
+        ``filesvc`` 传 ``[400]`` 只能拿到零星几条，传抓包里的 ``[400..408]``
+        才返回完整的 61 条历史。默认段见 :data:`~.const.TASK_TYPES_DEFAULT`。
         """
         creds = await self.async_ensure_credentials()
         data = await self._request(
@@ -1154,6 +1157,35 @@ class HuaweiDeviceClient:
             },
         )
         return (data.get("data") or {}).get("tasks") or []
+
+    async def async_clean_task_records(
+        self, task_ids: list[int], category: str = "user"
+    ) -> dict[str, Any]:
+        """清除任务中心的**历史记录**（``/filesvc/cleanTaskRecord``）。
+
+        ⚠️ 关键在字段名：抓包实据（2026-10-09 从 `capture_all_1791417873.jsonl`
+        挖出真实报文）是 ``taskIdList``（**不是** ``taskIds`` / ``taskId``）——
+        后两种形态实测分别返回 ``1100`` / ``1100``::
+
+            POST /filesvc/cleanTaskRecord
+            {"clientType":3,"deviceId":"9a762c46a872-LAPTOP-DLD5UGDT",
+             "taskIdList":[13,14,15,16,17]}
+            -> {"code":0,"data":{"errorIdList":[]}}
+
+        ``errorIdList`` 为空 = 全部清除成功；有值则是**清除失败**的 taskId。
+        只影响任务中心的显示，不碰任何文件。
+        """
+        creds = await self.async_ensure_credentials()
+        return await self._request(
+            "/filesvc/cleanTaskRecord",
+            method="POST",
+            params={"category": category},
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "taskIdList": [int(t) for t in task_ids],
+            },
+        )
 
     async def async_get_all_trans_tasks(self) -> list[dict[str, Any]]:
         """跨服务传输任务**全表**（``/trans/getAllTask``，实测 ``code 0``）。

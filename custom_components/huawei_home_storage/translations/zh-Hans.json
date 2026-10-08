@@ -611,11 +611,11 @@
       "fields": {
         "service": {
           "name": "任务来源",
-          "description": "filesvc 或 trans。"
+          "description": "filesvc / trans / gallery。"
         },
         "task_types": {
           "name": "任务类型",
-          "description": "留空用默认段（filesvc→400；trans→201/300）。"
+          "description": "留空用抓包实据的整段（filesvc→400..408）。"
         },
         "task_category": {
           "name": "任务分类",
@@ -650,6 +650,20 @@
         "entry_id": {
           "name": "配置条目 ID",
           "description": "留空则对第一个已配置的设备执行。"
+        }
+      }
+    },
+    "clean_task_records": {
+      "name": "清除任务记录",
+      "description": "清除任务中心的历史记录（只影响任务列表显示，不碰任何文件）。",
+      "fields": {
+        "task_ids": {
+          "name": "任务 ID 列表",
+          "description": "从 task_status 返回的 taskId。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
         }
       }
     }
