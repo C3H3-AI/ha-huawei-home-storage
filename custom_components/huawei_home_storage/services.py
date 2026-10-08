@@ -29,7 +29,12 @@ from homeassistant.core import (
     SupportsResponse,
 )
 
-from .const import CONF_DEVICE_ID, DOMAIN, FILE_FILES_CATEGORY
+from .const import (
+    CONF_DEVICE_ID,
+    DOMAIN,
+    FILE_FILES_CATEGORY,
+    TASK_TYPES_DEFAULT,
+)
 from .coordinator import HuaweiStorageData
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,6 +59,7 @@ SERVICE_FILE_DETAIL = "file_detail"
 SERVICE_SEARCH_FILES = "search_files"
 SERVICE_PHOTO_INFO = "photo_info"
 SERVICE_TASK_STATUS = "task_status"
+SERVICE_CLEAN_TASK_RECORDS = "clean_task_records"
 # ---- 设备级运维 ----
 SERVICE_REBOOT_DEVICE = "reboot_device"
 SERVICE_DISK_SLEEP = "disk_sleep"
@@ -288,7 +294,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         service = call.data.get("service") or "filesvc"
         types = call.data.get("task_types")
         if not types:
-            types = [400] if service == "filesvc" else [201, 300]
+            # 抓包实据：客户端传的是整段，只传 [400] 拿不到完整历史
+            types = TASK_TYPES_DEFAULT.get(service) or TASK_TYPES_DEFAULT["filesvc"]
         try:
             tasks = await runtime.client.async_get_task_status(
                 [int(t) for t in types],
@@ -298,6 +305,25 @@ async def async_register_services(hass: HomeAssistant) -> None:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "service": service, "count": len(tasks), "tasks": tasks}
+
+    async def _clean_task_records(call: "ServiceCall") -> "ServiceResponse":
+        """清除任务中心的历史记录（只影响任务列表显示，不碰任何文件）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        ids = [int(i) for i in call.data["task_ids"]]
+        _LOGGER.warning("清除任务中心历史记录 %d 条（不影响文件）", len(ids))
+        try:
+            result = await runtime.client.async_clean_task_records(
+                ids, category=call.data.get("category") or DEFAULT_CATEGORY
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("清除任务记录失败(%s): %s", ids, exc)
+            return {"ok": False, "error": str(exc)}
+        ok, dev_err = _device_ok(result)
+        failed = (result.get("data") or {}).get("errorIdList") or []
+        return {"ok": ok and not failed, "count": len(ids),
+                "failed_ids": failed, "error": dev_err, "result": result}
 
     async def _photo_info(call: "ServiceCall") -> "ServiceResponse":
         """把相册照片的 ``fileId`` 换成完整元数据（含 ``hdcFilePath`` 原图路径）。"""
@@ -834,10 +860,21 @@ async def async_register_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_TASK_STATUS, _task_status,
         schema=vol.Schema({
             **entry_field,
-            vol.Optional("service", default="filesvc"): vol.In(("filesvc", "trans")),
+            vol.Optional("service", default="filesvc"): vol.In(("filesvc", "trans", "gallery")),
             vol.Optional("task_types"): vol.All(cv.ensure_list, [vol.Coerce(int)]),
             vol.Optional("task_category", default=2): vol.Coerce(int),
             vol.Optional("all_tasks", default=False): cv.boolean,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_CLEAN_TASK_RECORDS, _clean_task_records,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("task_ids"): vol.All(
+                cv.ensure_list, [vol.Coerce(int)], vol.Length(min=1, max=MAX_BATCH)
+            ),
+            vol.Optional("category"): CATEGORY,
         }),
         supports_response=SupportsResponse.ONLY,
     )

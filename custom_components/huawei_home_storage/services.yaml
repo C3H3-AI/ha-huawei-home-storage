@@ -152,10 +152,10 @@ task_status:
       required: false
       selector:
         select:
-          options: [filesvc, trans]
+          options: [filesvc, trans, gallery]
     task_types:
       name: 任务类型
-      description: 留空用默认段（filesvc→400；trans→201/300）
+      description: 留空用抓包实据的整段（filesvc→400..408；trans→100..105,200..202；gallery→300..305）
       required: false
       selector: {text: {}}
     task_category:
@@ -168,6 +168,27 @@ task_status:
       required: false
       default: false
       selector: {boolean: {}}
+
+clean_task_records:
+  name: 清除任务记录
+  description: 清除任务中心的历史记录（只影响任务列表显示，不碰任何文件）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    task_ids:
+      name: 任务 ID 列表
+      description: 从 task_status 返回的 taskId
+      required: true
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
 
 photo_info:
   name: 照片元数据

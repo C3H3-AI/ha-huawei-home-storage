@@ -611,11 +611,11 @@
       "fields": {
         "service": {
           "name": "Task source",
-          "description": "filesvc or trans."
+          "description": "filesvc / trans / gallery."
         },
         "task_types": {
           "name": "Task types",
-          "description": "Defaults: filesvc→400; trans→201/300."
+          "description": "Defaults to the captured full ranges (filesvc→400..408)."
         },
         "task_category": {
           "name": "Task category",
@@ -650,6 +650,20 @@
         "entry_id": {
           "name": "Config entry ID",
           "description": "Leave empty to target the first configured device."
+        }
+      }
+    },
+    "clean_task_records": {
+      "name": "Clean task records",
+      "description": "Clear history entries in the task center (display only; no files are touched).",
+      "fields": {
+        "task_ids": {
+          "name": "Task IDs",
+          "description": "taskId values returned by task_status."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
         }
       }
     }

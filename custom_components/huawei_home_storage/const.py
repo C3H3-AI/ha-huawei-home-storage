@@ -114,6 +114,8 @@ API_FILE_SEARCH = "/filesvc/search"
 API_TRANS_MOVE = "/trans/move"
 API_TRANS_COPY = "/trans/copy"
 API_TRANS_ACROSSCOPY = "/trans/acrosscopy"
+# 任务中心：清历史记录（抓包实据 2026-10-09，字段是 taskIdList）
+API_CLEAN_TASK_RECORD = "/filesvc/cleanTaskRecord"
 API_DISK_CHANGE = "/devmanage/diskChange"
 API_USER_MANAGE = "/account/userManageInfo"
 API_USER_DATA = "/account/userDataStatisInfo"
@@ -175,10 +177,23 @@ ALBUM_TYPE_PLACE = 22               # 地点
 ALBUM_TYPE_FACE = 23                # 人脸 / 人物
 ALBUM_TYPE_SCENE = 24               # 场景
 
+# ---------------------------------------------------------------------------
+# 任务中心 taskTypes（**抓包实据**，2026-10-09 从 capture_all_1791417873.jsonl 挖出）
+# ---------------------------------------------------------------------------
+# 客户端轮询时传的是「整段」而不是单个值：只传 [400] 拿不到完整历史（实测只回零星
+# 几条），按下面整段传才能拿到全部（实测 filesvc 返回 61 条）。
+TASK_TYPES_FILESVC = [400, 401, 402, 403, 404, 405, 406, 407, 408]
+TASK_TYPES_TRANS = [100, 101, 102, 103, 104, 105, 200, 201, 202]
+TASK_TYPES_GALLERY = [300, 302, 303, 304, 305]
+TASK_TYPES_DEFAULT = {
+    "filesvc": TASK_TYPES_FILESVC,
+    "trans": TASK_TYPES_TRANS,
+    "gallery": TASK_TYPES_GALLERY,
+}
+
 ALBUM_TYPE_NAMES = {
     ALBUM_TYPE_USER: "用户相册",
-    ALBUM_TYPE_TRASH: "最近删除",
-    ALBUM_TYPE_PLACE: "地点",
+    ALBUM_TYPE_TRASH: "最近删除",    ALBUM_TYPE_PLACE: "地点",
     ALBUM_TYPE_FACE: "人物",
     ALBUM_TYPE_SCENE: "场景",
 }
