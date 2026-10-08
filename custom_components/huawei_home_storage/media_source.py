@@ -27,6 +27,8 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     DOMAIN,
+    FILE_FILES_CATEGORY,
+    ALBUM_PAGE_SIZE,
     FILE_ROOT_PATH,
     FILE_TYPE_ALBUM,
     FILE_TYPE_APP,
@@ -135,10 +137,16 @@ class HuaweiHomeStorageMediaSource(MediaSource):
         if section == "albums":
             return self._browse_albums(entry_id, runtime, account_key)
         if section == "album":
-            return self._browse_album(entry_id, runtime, rest)
+            return await self._browse_album(entry_id, runtime, rest)
         if section == "files":
             return await self._browse_files(
                 entry_id, runtime, FILE_ROOT_PATH, 0, account_key
+            )
+        if section == "shared":
+            # 共享空间 = category=public（与 files 的 user 空间独立）
+            return await self._browse_files(
+                entry_id, runtime, FILE_ROOT_PATH, 0, account_key,
+                category="public", section="shareddir",
             )
         if section == "filedir":
             # filedir|<offset>|<目录路径>：路径可能本身含 "|"（几乎不可能，
@@ -147,6 +155,13 @@ class HuaweiHomeStorageMediaSource(MediaSource):
             dir_path = SEP.join(rest[2:]) or FILE_ROOT_PATH
             return await self._browse_files(
                 entry_id, runtime, dir_path, offset, account_key
+            )
+        if section == "shareddir":
+            offset = int(rest[1]) if len(rest) > 1 else 0
+            dir_path = SEP.join(rest[2:]) or FILE_ROOT_PATH
+            return await self._browse_files(
+                entry_id, runtime, dir_path, offset, account_key,
+                category="public", section="shareddir",
             )
         if section == "trash":
             offset = int(rest[1]) if len(rest) > 1 else 0
@@ -168,6 +183,17 @@ class HuaweiHomeStorageMediaSource(MediaSource):
             if primary_key in clients:
                 return clients[primary_key]
         return runtime.client
+
+    def _device_id_of(self, runtime: Any, account_key: str) -> str:
+        """取 deviceId（``getAlbumInfo`` 等接口需要）。
+
+        来自配置条目的 ``device_id``（形如 ``42e9d4b7-...``）。
+        ⚠️ 它与 ``creds.cloud_dev_id``（设备 SN）**不可互换**——
+        多个接口实测用错就 1101/30104。
+        """
+        entry = getattr(runtime, "entry", None)
+        data = getattr(entry, "data", None) or {}
+        return str(data.get("device_id") or "")
 
     # -- 各级浏览 ----------------------------------------------------------
     def _browse_root(self) -> BrowseMediaSource:
@@ -250,6 +276,15 @@ class HuaweiHomeStorageMediaSource(MediaSource):
                 "全部文件（NAS 视图）",
             ),
             self._node(
+                _join(prefix, "shared"),
+                "共享空间",
+                MediaClass.DIRECTORY,
+                # ⚠️ 与「文件空间」是设备上的两个**独立**空间：
+                # category=user 只有个人目录，category=public 才是共享。
+                # 此前只有 user 分支，共享里的目录/文件完全看不到（实测 2026-10-08）。
+                "共享（public）",
+            ),
+            self._node(
                 _join(prefix, "trash", 0),
                 "最近删除",
                 MediaClass.DIRECTORY,
@@ -322,46 +357,146 @@ class HuaweiHomeStorageMediaSource(MediaSource):
             children_media_class=MediaClass.ALBUM,
         )
 
-    def _browse_album(
+    async def _browse_album(
         self, entry_id: str, runtime: Any, rest: list[str], account_key: str = ""
     ) -> BrowseMediaSource:
+        """浏览相册——列出**全部照片**（不是只有封面）。
+
+        原实现只取 ``coverInfo`` 的三个尺寸字段，导致点进任何相册
+        都只看到封面那一张（表现为「有数量没项目」）。
+
+        现在的链路（实测 2026-10-08）：
+        ``getAlbumInfo?albumId&albumType&clientType&dataType&deviceId
+                      &lastCreTime&lastRowId&num``
+        直接返回相册内的照片（含完整路径），分页靠
+        ``lastCreTime`` / ``lastRowId`` 游标。
+        ⚠️ 八个参数缺一不可，缺了会 ``30104``。
+
+        缩略图取 ``thumbFilePath``（可取）；``assets[].path``
+        （``/picture/asset/...``）实测 404，仅作兜底。
+        """
         prefix = _join(entry_id, account_key) if account_key else entry_id
         album_type = int(rest[1])
         album_id = int(rest[2])
+        # album|<type>|<id>[|<lastCreTime>|<lastRowId>]
+        last_cre = int(rest[3]) if len(rest) > 3 else 0
+        last_row = int(rest[4]) if len(rest) > 4 else 0
+        page_size = ALBUM_PAGE_SIZE
+
         albums = self._albums_of(runtime, account_key, album_type)
         album = next(
-            (
-                a
-                for a in albums
-                if int(a.get("albumId") or 0) == album_id
-            ),
-            None,
+            (a for a in albums if int(a.get("albumId") or 0) == album_id), None
         )
         if album is None:
             raise BrowseError(f"相册不存在: {album_type}/{album_id}")
-        cover = _first_cover(album)
-        children = []
-        for field in ("hdcFilePath", "lcdFilePath", "thumbFilePath"):
-            path = cover.get(field)
-            if path:
-                children.append(
-                    BrowseMediaSource(
-                        domain=DOMAIN,
-                        identifier=_join(prefix, "photo", path),
-                        media_class=MediaClass.IMAGE,
-                        media_content_type=JPEG,
-                        title=f"{album.get('albumName')} · {field}",
-                        can_play=True,
-                        can_expand=False,
-                        thumbnail=build_image_url(entry_id, path),
-                    )
+
+        title = f"{album.get('albumName')}（{album.get('num', 0)}）"
+        client = self._client_of(runtime, account_key)
+        children: list[BrowseMediaSource] = []
+
+        # 1) 直接取相册内的照片（含路径）—— 正解接口
+        photos: list[dict[str, Any]] = []
+        next_cre, next_row = 0, 0
+        try:
+            res = await client.async_get_album_photos(
+                album_id, album_type,
+                device_id=self._device_id_of(runtime, account_key),
+                last_cre_time=last_cre, last_row_id=last_row, num=page_size,
+            )
+            photos = res.get("photos") or []
+            next_cre = int(res.get("lastCreTime") or 0)
+            next_row = int(res.get("lastRowId") or 0)
+        except Exception:  # 接口失败不应让整个相册打不开
+            photos = []
+
+        mine = photos  # 已是本相册的照片，无需再按 albumId 过滤
+
+        for p in photos:
+            pid = p.get("fileId")
+            name = str(p.get("fileName") or p.get("name") or pid)
+            # 缩略图：优先 thumbFilePath（实测可取，25452 字节 JPEG）。
+            # ⚠️ assets[].path（/picture/asset/...）实测 404 取不到，
+            #    只在没有 thumbFilePath 时才退而求其次。
+            thumb = p.get("thumbFilePath") or ""
+            if not thumb:
+                for a in p.get("assets") or []:
+                    nm = str(a.get("name", ""))
+                    if "thumb" in nm:
+                        thumb = a.get("path") or ""
+                        break
+            # 原图优先 hdcFilePath，其次 lcdFilePath
+            full = p.get("hdcFilePath") or p.get("lcdFilePath") or ""
+            if not full:
+                continue
+            mtype = _mime_for(name)
+            children.append(
+                BrowseMediaSource(
+                    domain=DOMAIN,
+                    identifier=_join(prefix, "photo", full),
+                    media_class=(
+                        MediaClass.VIDEO if mtype.startswith("video")
+                        else MediaClass.IMAGE
+                    ),
+                    media_content_type=mtype,
+                    title=name,
+                    can_play=True,
+                    can_expand=False,
+                    thumbnail=build_image_url(entry_id, thumb) if thumb else None,
                 )
+            )
+
+        # 2) 无成员（如「所有照片」这类分类相册 coverInfo 为 null）→ 回退封面
+        if not children:
+            cover = _first_cover(album)
+            for field in ("hdcFilePath", "lcdFilePath", "thumbFilePath"):
+                path = cover.get(field)
+                if path:
+                    children.append(
+                        BrowseMediaSource(
+                            domain=DOMAIN,
+                            identifier=_join(prefix, "photo", path),
+                            media_class=MediaClass.IMAGE,
+                            media_content_type=JPEG,
+                            title=f"{album.get('albumName')} · {field}",
+                            can_play=True,
+                            can_expand=False,
+                            thumbnail=build_image_url(entry_id, path),
+                        )
+                    )
+
+        # 3) 下一页：用 getAlbumInfo 的 lastCreTime / lastRowId 游标
+        if mine and len(mine) >= page_size and next_cre:
+            children.append(
+                self._node(
+                    _join(prefix, "album", album_type, album_id, next_cre, next_row),
+                    "下一页 ▶",
+                    MediaClass.DIRECTORY,
+                )
+            )
+        if last_cre > 0:
+            children.append(
+                self._node(
+                    _join(prefix, "album", album_type, album_id, 0, 0),
+                    "◀ 回到首页",
+                    MediaClass.DIRECTORY,
+                )
+            )
+        if not children:
+            children.append(
+                self._node(
+                    _join(prefix, "album", album_type, album_id, 0),
+                    "（该相册暂无可显示的项目）",
+                    MediaClass.DIRECTORY,
+                )
+            )
+
+        cover = _first_cover(album)
         return BrowseMediaSource(
             domain=DOMAIN,
             identifier=_join(prefix, "album", album_type, album_id),
             media_class=MediaClass.ALBUM,
             media_content_type="",
-            title=f"{album.get('albumName')}（{album.get('num', 0)}）",
+            title=title,
             can_play=False,
             can_expand=True,
             children=children,
@@ -380,16 +515,22 @@ class HuaweiHomeStorageMediaSource(MediaSource):
         dir_path: str,
         offset: int,
         account_key: str = "",
+        category: str = FILE_FILES_CATEGORY,
+        section: str = "filedir",
     ) -> BrowseMediaSource:
         """浏览文件空间目录（NAS 视图）。
 
         目录条目继续展开（拼出完整路径），文件条目可直接播放，
         由数据通道按完整路径取原图/视频。
+
+        ⚠️ ``category`` 区分两个独立空间：``user``=文件空间，
+        ``public``=**共享空间**。两者内容完全不重叠（实测 2026-10-08）。
+        ``section`` 决定子目录回链用的标识前缀，避免两个空间串台。
         """
         prefix = _join(entry_id, account_key) if account_key else entry_id
         client = self._client_of(runtime, account_key)
         result = await client.async_list_files(
-            dir_path=dir_path, offset=offset, limit=FILES_PAGE_SIZE
+            dir_path=dir_path, offset=offset, limit=FILES_PAGE_SIZE, category=category
         )
         files = result.get("files") or []
         total = result.get("count")
@@ -400,7 +541,7 @@ class HuaweiHomeStorageMediaSource(MediaSource):
             prev_off = max(0, offset - FILES_PAGE_SIZE)
             children.append(
                 self._node(
-                    _join(prefix, "filedir", prev_off, dir_path),
+                    _join(prefix, section, prev_off, dir_path),
                     "◀ 上一页",
                     MediaClass.DIRECTORY,
                 )
@@ -414,7 +555,7 @@ class HuaweiHomeStorageMediaSource(MediaSource):
                 subtitle = f"{count} 项" if count is not None else ""
                 children.append(
                     self._node(
-                        _join(prefix, "filedir", 0, sub_path),
+                        _join(prefix, section, 0, sub_path),
                         name,
                         MediaClass.DIRECTORY,
                         subtitle,
@@ -448,7 +589,7 @@ class HuaweiHomeStorageMediaSource(MediaSource):
         ):
             children.append(
                 self._node(
-                    _join(prefix, "filedir", offset + FILES_PAGE_SIZE, dir_path),
+                    _join(prefix, section, offset + FILES_PAGE_SIZE, dir_path),
                     "下一页 ▶",
                     MediaClass.DIRECTORY,
                 )
@@ -456,18 +597,19 @@ class HuaweiHomeStorageMediaSource(MediaSource):
         if not children:
             children.append(
                 self._node(
-                    _join(prefix, "filedir", 0, dir_path),
+                    _join(prefix, section, 0, dir_path),
                     "（空目录）",
                     MediaClass.DIRECTORY,
                 )
             )
         page_no = offset // FILES_PAGE_SIZE + 1
-        title = dir_path.rstrip("/") or "文件空间"
+        default_title = "共享空间" if category == "public" else "文件空间"
+        title = dir_path.rstrip("/") or default_title
         if page_no > 1:
             title = f"{title}（第 {page_no} 页）"
         return BrowseMediaSource(
             domain=DOMAIN,
-            identifier=_join(prefix, "filedir", offset, dir_path),
+            identifier=_join(prefix, section, offset, dir_path),
             media_class=MediaClass.DIRECTORY,
             media_content_type="",
             title=title,

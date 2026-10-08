@@ -99,6 +99,20 @@ API_QUERY_BIN = "/gallery/queryBin"
 API_FILES = "/filesvc/files"
 API_RECYCLE = "/filesvc/recycleFiles"
 API_USB_STATUS = "/filesvc/usbStatus"
+# 上传第一步：申请文件占位，返回 fileId + sessionId（实测 2026-10-08 可用）
+API_PREPARE_UPLOAD = "/filesvc/prepareUpload"
+# 取消上传（端点实测存在，2026-10-08）
+API_CANCEL_UPLOAD = "/filesvc/cancelUpload"
+# 文件空间批量操作（删除/移动等），靠 query 的 operation= 区分（实测 2026-10-08）
+API_BATCH_OPERATION = "/filesvc/batchOperation"
+# 全文件视图 / 文件详情 / 搜索（静态提取 + 实测端点存在）
+API_ALL_FILES = "/filesvc/allFiles"
+API_FILE_DETAIL = "/filesvc/detail"
+API_FILE_SEARCH = "/filesvc/search"
+# 传输任务：移动 / 复制 / 跨服务复制（抓包实据 2026-10-08）
+API_TRANS_MOVE = "/trans/move"
+API_TRANS_COPY = "/trans/copy"
+API_TRANS_ACROSSCOPY = "/trans/acrosscopy"
 API_DISK_CHANGE = "/devmanage/diskChange"
 API_USER_MANAGE = "/account/userManageInfo"
 API_USER_DATA = "/account/userDataStatisInfo"
@@ -134,6 +148,8 @@ FILE_FILES_DIR_TYPE = 6
 FILE_FILES_CATEGORY = "user"
 FILE_FILES_SORT = "timeDesc"
 FILES_PAGE_SIZE = 200               # filesvc/files 单页上限
+# ⚠️ 设备硬上限：实测 num=500 可用，num=1000 起报 30101（越界）
+ALBUM_PAGE_SIZE = 500             # 相册照片单页（getAlbumInfo 的 num 上限 500）
 # filesvc/files 的条目 type：2 文件夹 / 4 相册 / 6 应用 / 8 普通文件
 FILE_TYPE_DIR = 2
 FILE_TYPE_ALBUM = 4
