@@ -1239,19 +1239,37 @@ class HuaweiDeviceClient:
         return data.get("data") or {}
 
     async def async_search_files(
-        self, keyword: str, category: str = "public"
+        self, keyword: str, category: str = FILE_FILES_CATEGORY,
+        limit: int = 20, offset: int = 0,
     ) -> dict[str, Any]:
-        """按关键字搜索（``/filesvc/search``）。
+        """按关键字搜索文件空间（``/filesvc/search``，**实测可用**）。
 
-        ⚠️ 参数**尚未解出**：多次实测返回 ``1101``（缺必填字段），
-        说明端点仍在但还需要别的参数。保留方法以便后续补，调用方需容错。
+        ⚠️ 抓包里**0 条**真实请求（用户没用过搜索），参数是 2026-10-09 在 206
+        测试机上**穷举 30+ 种形态**试出来的，三个字段缺一不可：:
+
+            POST /filesvc/search
+            {"clientType":3,"deviceId":"...","query":"测试",
+             "limit":20,"offset":0}
+            -> {"code":0,"data":{"count":1,"files":[{
+                 "name":..., "category":..., "mime":..., "mtime":...}]}}
+
+        排错要点（都是实测对照）：
+        * 关键字字段是 ``query``（**不是** ``keyword``/``key``/``searchKey``）
+        * 分页字段是 ``limit``（**不是** ``num``）—— 用 ``num`` 会返回 ``21001``
+        * **GET 形态一律返回 ``1003``**，只能 POST
+        * 带上 ``category``/``dirType``/``path`` 等反而会变 ``21001``，别画蛇添足
         """
+        creds = await self.async_ensure_credentials()
         data = await self._request(
             API_FILE_SEARCH,
             method="POST",
-            params={"category": category},
-            json_body={"keyword": keyword, "clientType": DEVICE_CLIENT_TYPE},
-            extra_headers={"Dest-File": encode_device_path(FILE_ROOT_PATH)},
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "query": keyword,
+                "limit": int(limit),
+                "offset": int(offset),
+            },
         )
         return data.get("data") or {}
 

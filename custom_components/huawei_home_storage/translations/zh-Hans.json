@@ -537,7 +537,7 @@
     },
     "search_files": {
       "name": "搜索文件",
-      "description": "按关键字搜索文件空间（设备参数未解出，目前返回失败，调用需容错）。",
+      "description": "按关键字搜索文件空间（参数由穷举实测得出：query + limit/offset）。",
       "fields": {
         "keyword": {
           "name": "关键字",
@@ -546,6 +546,14 @@
         "category": {
           "name": "空间",
           "description": "user = 我的文件；public = 共享。"
+        },
+        "limit": {
+          "name": "条数",
+          "description": "最多返回多少条。"
+        },
+        "offset": {
+          "name": "偏移",
+          "description": "翻页用。"
         }
       }
     },
