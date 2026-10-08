@@ -60,6 +60,8 @@ SERVICE_SEARCH_FILES = "search_files"
 SERVICE_PHOTO_INFO = "photo_info"
 SERVICE_TASK_STATUS = "task_status"
 SERVICE_CLEAN_TASK_RECORDS = "clean_task_records"
+SERVICE_ADD_TO_ALBUM = "add_to_album"
+SERVICE_GET_TASK = "get_task"
 # ---- 设备级运维 ----
 SERVICE_REBOOT_DEVICE = "reboot_device"
 SERVICE_DISK_SLEEP = "disk_sleep"
@@ -324,6 +326,53 @@ async def async_register_services(hass: HomeAssistant) -> None:
         failed = (result.get("data") or {}).get("errorIdList") or []
         return {"ok": ok and not failed, "count": len(ids),
                 "failed_ids": failed, "error": dev_err, "result": result}
+
+    async def _add_to_album(call: "ServiceCall") -> "ServiceResponse":
+        """把**已有的照片**加进相册（``/gallery/addAlbumMemb``）。
+
+        加的是**相册域的 fileId**（不是文件空间的 fid）：从相册浏览或
+        ``query_files source=photos`` 里取。重复添加返回 suc（幂等），
+        所以以 ``failIds`` 为空为准。
+        """
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        ids = [int(i) for i in call.data["file_ids"]]
+        album_id = int(call.data["album_id"])
+        _LOGGER.warning("把 %d 张照片加入相册 %s", len(ids), album_id)
+        try:
+            result = await runtime.client.async_add_album_members(
+                album_id, ids,
+                album_name=call.data.get("album_name") or "",
+                album_type=int(call.data.get("album_type") or 6),
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("加入相册失败(%s): %s", album_id, exc)
+            return {"ok": False, "album_id": album_id, "error": str(exc)}
+        ok, dev_err = _device_ok(result)
+        failed = result.get("failIds") or []
+        suc = result.get("sucIds") or []
+        return {"ok": ok and not failed, "album_id": album_id,
+                "added": len(suc), "failed_ids": failed,
+                "error": dev_err, "result": result}
+
+    async def _get_task(call: "ServiceCall") -> "ServiceResponse":
+        """按 taskId 查单个任务详情（``/<service>/getTaskStatus``）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            result = await runtime.client.async_get_single_task(
+                int(call.data["task_id"]),
+                category=call.data.get("category") or DEFAULT_CATEGORY,
+                service=call.data.get("service") or "filesvc",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        ok, dev_err = _device_ok(result)
+        tasks = (result.get("data") or {}).get("tasks") or []
+        return {"ok": ok, "count": len(tasks), "tasks": tasks,
+                "error": dev_err, "result": result}
 
     async def _photo_info(call: "ServiceCall") -> "ServiceResponse":
         """把相册照片的 ``fileId`` 换成完整元数据（含 ``hdcFilePath`` 原图路径）。"""
@@ -924,6 +973,29 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 cv.ensure_list, [vol.Coerce(int)], vol.Length(min=1, max=MAX_BATCH)
             ),
             vol.Optional("category"): CATEGORY,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_GET_TASK, _get_task,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("task_id"): vol.Coerce(int),
+            vol.Optional("service", default="filesvc"): vol.In(("filesvc", "trans")),
+            vol.Optional("category"): CATEGORY,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ADD_TO_ALBUM, _add_to_album,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("album_id"): vol.Coerce(int),
+            vol.Required("file_ids"): vol.All(
+                cv.ensure_list, [vol.Coerce(int)], vol.Length(min=1, max=MAX_BATCH)
+            ),
+            vol.Optional("album_name"): str,
+            vol.Optional("album_type", default=6): vol.Coerce(int),
         }),
         supports_response=SupportsResponse.ONLY,
     )

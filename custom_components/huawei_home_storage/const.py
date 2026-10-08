@@ -116,6 +116,9 @@ API_TRANS_COPY = "/trans/copy"
 API_TRANS_ACROSSCOPY = "/trans/acrosscopy"
 # 任务中心：清历史记录（抓包实据 2026-10-09，字段是 taskIdList）
 API_CLEAN_TASK_RECORD = "/filesvc/cleanTaskRecord"
+# 相册成员：把已有照片加进相册 / 共享到人物（抓包实据 2026-10-09）
+API_ADD_ALBUM_MEMB = "/gallery/addAlbumMemb"
+API_ADD_SHARE_TO_PERSON = "/gallery/addShareToPerson"
 API_DISK_CHANGE = "/devmanage/diskChange"
 API_USER_MANAGE = "/account/userManageInfo"
 API_USER_DATA = "/account/userDataStatisInfo"

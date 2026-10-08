@@ -666,6 +666,46 @@
           "description": "user = My Files; public = Shared."
         }
       }
+    },
+    "add_to_album": {
+      "name": "Add to album",
+      "description": "Add existing photos to an album (gallery fileIds, not file-space fids; adding twice is idempotent).",
+      "fields": {
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "file_ids": {
+          "name": "Photo fileIds",
+          "description": "Gallery-domain photo ids."
+        },
+        "album_name": {
+          "name": "Album name",
+          "description": "Optional, sent with the request."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        }
+      }
+    },
+    "get_task": {
+      "name": "Get single task",
+      "description": "Look up one task by its taskId (complements the bulk task_status query).",
+      "fields": {
+        "task_id": {
+          "name": "Task ID",
+          "description": "taskId returned by task_status."
+        },
+        "service": {
+          "name": "Task source",
+          "description": "filesvc or trans."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
     }
   },
   "common": {

@@ -190,6 +190,59 @@ clean_task_records:
         select:
           options: [user, public]
 
+get_task:
+  name: 查单个任务
+  description: 按 taskId 精确查一个任务的详情（与 task_status 的批量查询互补）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    task_id:
+      name: 任务 ID
+      required: true
+      selector: {number: {min: 0}}
+    service:
+      name: 任务来源
+      required: false
+      selector:
+        select:
+          options: [filesvc, trans]
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+add_to_album:
+  name: 加入相册
+  description: 把已有的照片加进相册（用相册域 fileId，不是文件空间的 fid；重复添加是幂等的）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 照片 fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
+    album_name:
+      name: 相册名称
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      description: 用户/共享相册为 6
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+
 photo_info:
   name: 照片元数据
   description: 把相册照片的 fileId 换成完整元数据（含 hdcFilePath 原图路径）
