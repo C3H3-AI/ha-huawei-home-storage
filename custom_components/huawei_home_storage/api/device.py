@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import random
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -31,6 +32,15 @@ from ..const import (
     API_QUERY_BIN,
     API_RECYCLE,
     API_USB_STATUS,
+    API_PREPARE_UPLOAD,
+    API_CANCEL_UPLOAD,
+    API_BATCH_OPERATION,
+    API_ALL_FILES,
+    API_FILE_DETAIL,
+    API_FILE_SEARCH,
+    API_TRANS_MOVE,
+    API_TRANS_COPY,
+    API_TRANS_ACROSSCOPY,
     API_USER_DATA,
     API_ONLINE_STATE,
     API_DEVICE_INFO,
@@ -67,6 +77,7 @@ from ..const import (
     FILE_FILES_SORT,
     FILE_ROOT_PATH,
     FILES_PAGE_SIZE,
+    ALBUM_PAGE_SIZE,
     REQUEST_TIMEOUT,
 )
 from .huawei_cloud import DeviceCredentials, HuaweiCloudAuthError, HuaweiCloudError
@@ -363,6 +374,151 @@ class HuaweiDeviceClient:
         )
         return data.get("data") or {}
 
+    async def async_upload_file(
+        self,
+        dest_path: str,
+        payload: bytes,
+        device_id: str,
+        category: str = "public",
+        src_path: str = "",
+        view_path: str = "",
+        mtime_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """上传文件到设备（**端到端打通**，2026-10-08 实测落盘）。
+
+        两段式，全部照抓包报文复现（外网/局域网一致）::
+
+            ① POST /filesvc/prepareUpload?category=public
+               {"deviceId":..,"uploadType":1,"files":[{viewPath,srcPath,
+                 path,sessionId:"",fileId:0,fileSize,orientation:0,taskId:0}]}
+               → {fileList:[{fileId, sessionId, offset, path, ...}]}
+
+            ② POST <数据通道>/upload?<17 个 query 参数>
+               头: Content-Disposition / Content-Type / Dest-File /
+                   X-Session-ID / Expect: 100-continue（**必需**，缺则 500）
+               body: 文件原始字节
+
+        ⚠️ 关键点（缺一个就 500/52015）：
+        * query 必须带 **mediaType/mtime/orientation/service/size/
+          sourceAlbum/srcPath/takenTime/uploadType/usb/viewPath** ——
+          抓包里共 17 个参数，缺一个就 500（openresty 层拒绝）
+        * **``Expect: 100-continue`` 必需**（实测去掉 → 500）
+        * ``service=filesvc`` 也要在 query 里（prepare 不用，upload 要）
+        * ``Dest-File`` / ``Content-Disposition`` 的文件名用**全字节百分号编码**
+        * 成功返回 ``{"code":0,"data":{"path":"/file/test/xxx"}}``
+        """
+        import time as _time
+        import urllib.parse as _up
+
+        await self.async_ensure_credentials()
+        durl = self._data_base()
+        dh = self._data_headers()
+        fname = dest_path.rstrip("/").rsplit("/", 1)[-1]
+        now = mtime_ms or int(_time.time() * 1000)
+        src = src_path or f"/win/C/tmp/{fname}"
+        view = view_path or f"Pictures/MemoSpace/{fname}"
+
+        # ① prepareUpload
+        prep = await self._request(
+            API_PREPARE_UPLOAD,
+            method="POST",
+            params={"category": category},
+            json_body={"deviceId": device_id, "uploadType": 1,
+                       "files": [{"viewPath": view, "srcPath": src,
+                                  "path": dest_path, "sessionId": "",
+                                  "fileId": 0, "fileSize": len(payload),
+                                  "orientation": 0, "taskId": 0}]},
+        )
+        items = (prep.get("data") or {}).get("fileList") or []
+        if not items:
+            raise HuaweiDeviceError(f"prepareUpload 无 fileList: {prep}")
+        fid = str(items[0].get("fileId"))
+        sid = str(items[0].get("sessionId"))
+
+        # ② POST /upload（数据通道，17 参数 + Expect: 100-continue）
+        q = {
+            "category": category, "clientType": str(DEVICE_CLIENT_TYPE),
+            "comment": "", "ctime": str(now), "deviceId": device_id,
+            "fileId": fid, "fileVer": "", "mediaType": "0", "mtime": str(now),
+            "orientation": "0", "service": "filesvc", "size": str(len(payload)),
+            "sourceAlbum": "0", "srcPath": src, "takenTime": "0",
+            "uploadType": "1", "usb": "false", "viewPath": view,
+        }
+        h = {**dh,
+             "Content-Disposition": f'attachment;filename="{_up.quote(fname)}"',
+             "Content-Type": "application/octet-stream",
+             "Dest-File": encode_device_path(dest_path),
+             "X-Session-ID": sid,
+             "Expect": "100-continue"}
+        async with self._session.post(
+            f"{durl}/upload", params=q, headers=h, data=payload,
+            timeout=aiohttp.ClientTimeout(total=max(120, len(payload) // 10000)),
+        ) as resp:
+            text = await resp.text()
+        try:
+            j = json.loads(text)
+        except ValueError:
+            raise HuaweiDeviceError(f"/upload 非 JSON 响应: HTTP {resp.status} {text[:120]}")
+        # 成功：{"code":0,"data":{"path":...}}。注意 code 可能是 str/int。
+        if str(j.get("code")) != "0":
+            raise HuaweiDeviceError(f"/upload 失败: {text[:200]}")
+        return j
+
+    async def async_get_album_photos(
+        self,
+        album_id: int,
+        album_type: int,
+        device_id: str,
+        last_cre_time: int = 0,
+        last_row_id: int = 0,
+        num: int = ALBUM_PAGE_SIZE,
+    ) -> dict[str, Any]:
+        """取相册内的照片（``/gallery/getAlbumInfo``）——**列全部照片的正解**。
+
+        抓包实据（出现 1220 次，客户端浏览相册照片的主接口）::
+
+            GET /gallery/getAlbumInfo
+                ?albumId=16&albumType=6&clientType=3&dataType=1
+                &deviceId=<devId>&lastCreTime=0&lastRowId=0&num=500
+
+        ⚠️ 「所有照片」(albumId=1) 传它的 albumType=1 会 ``30109``，
+        实测改用 ``albumType=2`` 才有数据——本方法已内置该回退。
+        """
+        req = {
+            "albumId": album_id,
+            "albumType": album_type,
+            "clientType": DEVICE_CLIENT_TYPE,
+            "dataType": 1,
+            "deviceId": device_id,
+            "lastCreTime": last_cre_time,
+            "lastRowId": last_row_id,
+            "num": num,
+        }
+        try:
+            data = await self._request("/gallery/getAlbumInfo", req)
+        except HuaweiDeviceError as err:
+            # 「所有照片」等特殊相册：albumType=1 → 30109，改用 2 重试。
+            # _request 对非 0 code 直接抛异常，所以在这里捕获判断。
+            if "30109" not in str(err):
+                raise
+            data = await self._request(
+                "/gallery/getAlbumInfo", {**req, "albumType": 2}
+            )
+        photos = data.get("data") or []
+        if not isinstance(photos, list):
+            photos = []
+        next_cre, next_row = last_cre_time, last_row_id
+        if photos:
+            ts = [int(p.get("createTime") or 0) for p in photos]
+            mx = max(ts) if ts else 0
+            if mx:
+                next_cre = mx
+            rid = [int(p.get("rowId") or 0) for p in photos]
+            mrow = max(rid) if rid else 0
+            if mrow:
+                next_row = mrow
+        return {"photos": photos, "lastCreTime": next_cre, "lastRowId": next_row}
+
     async def async_get_album_members(
         self, album_type: int, pre_id: int = 0, num: int = 500
     ) -> list[dict[str, Any]]:
@@ -613,12 +769,351 @@ class HuaweiDeviceClient:
         return data.get("data") or {}
 
     # ------------------------------------------------------------------
+    # 上传（/filesvc/prepareUpload，见 docs/huawei-storage-upload-protocol.md）
+    # ------------------------------------------------------------------
+    async def async_prepare_upload(
+        self, dest_path: str, file_size: int, src_path: str | None = None
+    ) -> dict[str, Any]:
+        """上传第一步：向设备申请文件占位，拿 ``fileId`` + ``sessionId``。
+
+        实测（2026-10-08，AS6020-02）：::
+
+            POST /filesvc/prepareUpload?clientType=3&deviceId=<devId>
+            {"deviceId":..., "uploadType":1,
+             "files":[{"path":"/file/x.txt","fileSize":11,"srcPath":"/file/x.txt"}]}
+            -> {"code":0,"data":{"fileList":[{"fileId":...,"sessionId":...,
+                "offset":0,"path":...,"srcPath":...,"status":0,"taskId":0}]}}
+
+        返回 ``data.fileList[0]``；失败（无 fileList/sessionId）时抛
+        :class:`RuntimeError`。后续字节流与完成通知见协议文档第 1 节，
+        尚未落地（设备对第三方身份仍返回 ``1004``，见文档「未完成」）。
+        """
+        src = src_path or dest_path
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            API_PREPARE_UPLOAD,
+            method="POST",
+            json_body={
+                "deviceId": creds.cloud_dev_id,
+                "uploadType": 1,
+                "files": [{"path": dest_path, "fileSize": file_size, "srcPath": src}],
+            },
+        )
+        items = ((data.get("data") or {}).get("fileList") or [])
+        if not items or not items[0].get("sessionId"):
+            raise RuntimeError(f"prepareUpload 未返回会话: {data}")
+        return items[0]
+
+    async def async_delete_paths(
+        self,
+        paths: list[str],
+        device_id: str,
+        to_recycle: bool = True,
+        category: str = "user",
+    ) -> dict[str, Any]:
+        """删除文件空间里的路径（**实测可用**，2026-10-08）。
+
+        抓包实据（用户真实删除，``capture.jsonl`` L118）::
+
+            POST /filesvc/batchOperation?category=user&operation=remove&type=recycle
+            {"tasks":[{"clientType":3,"deviceId":"9a762c46a872-LAPTOP-DLD5UGDT",
+                       "name":"","srcPath":["/file/测试/屏幕截图 ....png"],
+                       "subTaskId":1,"transId":"244833947285","type":0}]}
+            -> {"code":0,"data":{"tasks":[{"taskId":6,"transId":"..."}]}}
+
+        要点（此前一直失败的根因）：
+        * 端点不是 ``/filesvc/remove``（该端点恒 1101），而是 **``batchOperation``**
+        * ``operation=remove`` 决定了动作，``type`` 决定去向：
+          ``recycle``（进回收站，可逆）/ ``delete``（彻底删）
+        * 参数嵌在 **``tasks[]`` 数组**里，不是扁平 body
+        * ``srcPath`` 是**数组**，目录路径需带尾斜杠
+        * ⚠️ body 里的 ``deviceId`` 必须是**配置条目的 device_id**
+          （``entry.data["device_id"]``，形如 ``42e9d4b7-...``）；
+          用 ``creds.cloud_dev_id``（设备 SN）会被拒 ``1101``——
+          这两者在此端点上**不可互换**（实测 2026-10-08）
+
+        返回 ``{"code":0,"data":{"tasks":[{"taskId":..,"transId":".."}]}}``。
+        删除为**异步任务**：返回成功不代表立即生效，用
+        :meth:`async_get_task_status` 查 ``progress`` 确认落地。
+        """
+        creds = await self.async_ensure_credentials()
+        body = {
+            "tasks": [{
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": device_id,
+                "name": "",
+                "srcPath": list(paths),
+                "subTaskId": 1,
+                # ⚠️ transId 必须是 **12 位数字**：实测 9 位会被拒 1101，
+                # 12 位才返回 code 0（抓包原值为 12 位）。
+                "transId": str(random.randint(10**11, 10**12 - 1)),
+                "type": 0,
+            }]
+        }
+        return await self._request(
+            API_BATCH_OPERATION,
+            method="POST",
+            params={"category": category, "operation": "remove",
+                    "type": "recycle" if to_recycle else "delete"},
+            json_body=body,
+        )
+
+    async def async_get_photos_info(
+        self, file_ids: list[int] | list[str]
+    ) -> list[dict[str, Any]]:
+        """把 fileId 换成**完整元数据**（``/gallery/getSelectedPhotosInfo``）。
+
+        实测（2026-10-08）返回每项的：``hdcFilePath``（原图）、
+        ``lcdFilePath``（大图）、``assets[].path``（``thumb``/``lcd``）、
+        ``city````createTime````favorite````hash`` 等。
+        这是**相册成员唯一能拿到图片路径的途径**。
+
+        ⚠️ 只有**有效** fileId 才有返回；从 ``getIncPhotosInfoTable``
+        取到的删除残留（``operation=2``）会返回空数组。
+        """
+        data = await self._request(
+            "/gallery/getSelectedPhotosInfo",
+            method="POST",
+            json_body={"clientType": DEVICE_CLIENT_TYPE,
+                       "fileIds": [{"fileId": f} for f in file_ids]},
+        )
+        d = data.get("data") or []
+        return d if isinstance(d, list) else []
+
+    async def async_recycle_recover(
+        self, rid: int | str, name: str = "", device_id: str = "",
+        category: str = "public", item_type: int = 4
+    ) -> dict[str, Any]:
+        """从回收站**恢复**条目（``batchOperation`` 的 ``recycle/recover``）。
+
+        抓包实据（用户真实还原操作，2026-10-08）::
+
+            POST /filesvc/batchOperation?category=public
+                 ?operation=recycle&type=recover
+            {"tasks":[{"clientType":3,"deviceId":"9a762c46a872-LAPTOP-DLD5UGDT",
+                       "name":"新建文件夹","rid":["82"],
+                       "subTaskId":1,"transId":"777394318487","type":4}]}
+            -> {"code":0,"data":{"tasks":[{"taskId":..,"transId":".."}]}}
+
+        ⚠️ 四个易错点（实测，错一个就 ``prog=-1`` 失败）：
+        * ``operation`` 是 **``recycle``**（不是 ``remove``）
+        * ``type`` 是 **``recover``**
+        * ``rid`` 必须是**数组**
+        * tasks 内的 ``type`` 用 **4**（目录）/ 0（文件）
+
+        ``rid`` 来自 :meth:`async_list_recycle`（必须用 GET 取）。
+        恢复是异步任务，用 :meth:`async_get_task_status` 查 ``progress`` 确认。
+        """
+        body = {"tasks": [{
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": device_id,
+            "name": name,
+            "rid": [rid],
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+            "type": item_type,
+        }]}
+        return await self._request(
+            API_BATCH_OPERATION,
+            method="POST",
+            params={"category": category, "operation": "recycle", "type": "recover"},
+            json_body=body,
+        )
+
+    async def async_list_recycle(
+        self, category: str = "public", limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """列回收站条目（``/filesvc/recycleFiles``）。
+
+        ⚠️ **必须用 GET**：实测 POST 返回 ``1004``（2026-10-08）。
+        条目含 ``rid``（恢复用）、``name``、``path``、``dtime``、``type``。
+        """
+        data = await self._request(
+            API_RECYCLE,
+            {"category": category, "limit": limit, "offset": offset},
+        )
+        return (data.get("data") or {}).get("files") or []
+
+    async def async_cancel_upload(
+        self, fids: list[int] | list[str], device_id: str
+    ) -> dict[str, Any]:
+        """取消进行中的上传（``/filesvc/cancelUpload``，**实测 code 0**）。
+
+        实测（2026-10-08）：body 用 **``fids`` 数组**（与 ``srcPath``/``sessionId``
+        无效，返回 1101）::
+
+            POST /filesvc/cancelUpload
+            {"clientType":3,"deviceId":"42e9d4b7-...","fids":[<fileId>]}
+            -> {"code":0}
+
+        ``fileId`` 来自 :meth:`async_prepare_upload` 的返回值。
+        """
+        return await self._request(
+            API_CANCEL_UPLOAD,
+            method="POST",
+            json_body={"clientType": DEVICE_CLIENT_TYPE, "deviceId": device_id,
+                       "fids": list(fids)},
+        )
+
+    async def async_all_files(
+        self, category: str = "public", offset: int = 0, limit: int = FILES_PAGE_SIZE
+    ) -> dict[str, Any]:
+        """全文件视图（``/filesvc/allFiles``，端点实测存在）。
+
+        与 :meth:`async_list_files` 的差别：后者按目录逐层浏览（需 ``Dest-File``），
+        前者是扁平的全量视图。
+        """
+        data = await self._request(
+            API_ALL_FILES,
+            {"category": category, "limit": limit, "offset": offset},
+            extra_headers={"Dest-File": encode_device_path(FILE_ROOT_PATH)},
+        )
+        inner = data.get("data") or {}
+        return {"files": inner.get("files") or [], "count": inner.get("count")}
+
+    async def async_file_detail(self, path: str, category: str = "public") -> dict[str, Any]:
+        """文件/目录详情（``/filesvc/detail``）。
+
+        ⚠️ 参数尚未完全解出（实测 2026-10-08）：
+        * ``{"path": ...}`` → ``code -2``（字段形态对，但值需为**有效**路径）
+        * ``fid`` / ``id`` / ``fids`` → ``1101``（缺字段）
+        保留方法以便后续补参数；调用方应容错。
+        """
+        data = await self._request(
+            API_FILE_DETAIL,
+            method="POST",
+            json_body={"path": path, "category": category},
+            extra_headers={"Dest-File": encode_device_path(path)},
+        )
+        return data.get("data") or {}
+
+    async def async_search_files(
+        self, keyword: str, category: str = "public"
+    ) -> dict[str, Any]:
+        """按关键字搜索（``/filesvc/search``）。
+
+        ⚠️ HANDOFF §1.6 记录该端点返回 ``1003``；本次实测返回 ``1101``
+        （缺必填字段），说明**它仍在但需要更多参数**，未完整解出。
+        保留方法以便后续补参数，调用方应容错处理。
+        """
+        data = await self._request(
+            API_FILE_SEARCH,
+            method="POST",
+            params={"category": category},
+            json_body={"keyword": keyword, "clientType": DEVICE_CLIENT_TYPE},
+            extra_headers={"Dest-File": encode_device_path(FILE_ROOT_PATH)},
+        )
+        return data.get("data") or {}
+
+    async def async_trans_move(
+        self,
+        src_paths: list[str],
+        dst_dir: str,
+        device_id: str,
+        src_category: str = "public",
+        dst_category: str = "public",
+    ) -> dict[str, Any]:
+        """移动文件/目录（``/trans/move``）。
+
+        抓包实据（用户真实操作，``capture.jsonl`` L239）::
+
+            POST /trans/move?category=user
+            {"tasks":[{"dCategory":"user","dPath":"/file/__probe_noop__/",
+                       "dVersion":1,"deviceId":"9a762c46a872-LAPTOP-DLD5UGDT",
+                       "name":"1791391583908","sCategory":"public",
+                       "sPaths":["/file/新建文件夹/是否撒/"],
+                       "subTaskId":1,"transId":"227734064393"}]}
+
+        与 :meth:`async_delete_paths` 同构：参数嵌在 ``tasks[]`` 里。
+        """
+        body = {"tasks": [{
+            "deviceId": device_id,
+            "sCategory": src_category,
+            "sPaths": list(src_paths),
+            "dCategory": dst_category,
+            "dPath": dst_dir,
+            "dVersion": 1,
+            "name": str(int(asyncio.get_event_loop().time() * 1000)),
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+        }]}
+        return await self._request(API_TRANS_MOVE, method="POST",
+                                   params={"category": dst_category},
+                                   json_body=body)
+
+    async def async_trans_acrosscopy(
+        self,
+        src_files: list[dict[str, Any]],
+        src_service: str,
+        dst_dirs: list[dict[str, Any]],
+        dst_service: str,
+        device_id: str,
+    ) -> dict[str, Any]:
+        """跨服务复制（``/trans/acrosscopy``）。
+
+        抓包实据（``capture.jsonl`` L268）—— 把文件空间的图复制进相册::
+
+            {"clientType":3,
+             "src":{"files":[{"category":"public","fid":209056,
+                              "path":"/file/新建文件夹/屏幕截图 ....png"}],
+                    "service":"filesvc"},
+             "dest":{"dirs":[{"addTime":1791391599804,"albumId":16,
+                              "albumName":"照片","albumType":6,
+                              "category":"public"}],
+                     "service":"gallery"},
+             "deviceId":"9a762c46a872-LAPTOP-DLD5UGDT",
+             "subTaskId":1,"transId":"415751786104"}
+        """
+        body = {
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": device_id,
+            "src": {"files": src_files, "service": src_service},
+            "dest": {"dirs": dst_dirs, "service": dst_service},
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+        }
+        return await self._request(API_TRANS_ACROSSCOPY, method="POST", json_body=body)
+
+    async def async_get_task_status(
+        self, task_types: list[int], category: int = 2, service: str = "filesvc"
+    ) -> list[dict[str, Any]]:
+        """查传输任务中心（只读）。
+
+        ``service`` 取 ``filesvc``（文件空间，``taskType`` 400 段）或
+        ``trans``（跨服务传输，含 201/300 段）。返回任务列表，每项含
+        ``originObjectName``（源名）、``destination``（目标目录）、
+        ``objectType``（0 文件 / 1 目录 / 2 相册对象）、``progress``、
+        ``transId``。实测 2026-10-08。
+        """
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            f"/{service}/getAllTaskStatus",
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "taskCategory": category,
+                "taskTypes": task_types,
+            },
+        )
+        return (data.get("data") or {}).get("tasks") or []
+
+    # ------------------------------------------------------------------
     # 文件空间（NAS 视图，/filesvc/files + Dest-File 头）
     # ------------------------------------------------------------------
     async def async_list_files(
-        self, dir_path: str = FILE_ROOT_PATH, offset: int = 0, limit: int = FILES_PAGE_SIZE
+        self,
+        dir_path: str = FILE_ROOT_PATH,
+        offset: int = 0,
+        limit: int = FILES_PAGE_SIZE,
+        category: str = FILE_FILES_CATEGORY,
     ) -> dict[str, Any]:
         """列文件空间目录。
+
+        ⚠️ ``category`` 区分**两个独立的空间**（实测 2026-10-08）：
+        ``user`` = 「我的文件」，``public`` = **「共享」**。
+        用户在 PC 客户端「共享」里建的目录只在 ``public`` 下可见；
+        此前硬编码 ``user`` 导致共享空间的内容**完全看不到**。
 
         ``dir_path`` 为设备目录路径（含尾斜杠，如 ``/file/``）。必须携带
         ``Dest-File`` 请求头（目录路径的全字节百分号编码），缺省时设备返回
@@ -630,7 +1125,7 @@ class HuaweiDeviceClient:
         data = await self._request(
             API_FILES,
             {
-                "category": FILE_FILES_CATEGORY,
+                "category": category,
                 "dirType": FILE_FILES_DIR_TYPE,
                 "limit": limit,
                 "offset": offset,
@@ -648,14 +1143,33 @@ class HuaweiDeviceClient:
     # ------------------------------------------------------------------
     # 图片（8472 数据通道）
     # ------------------------------------------------------------------
-    async def async_fetch_image(self, device_path: str) -> bytes | None:
-        """按设备路径取图（``/picture/thumb|asset|raw|hdc_1080`` 等）。"""
+    async def async_fetch_image(
+        self,
+        device_path: str,
+        service: str = "gallery",
+        category: str = "",
+    ) -> bytes | None:
+        """按设备路径取图（``/picture/thumb|asset|raw|hdc_1080`` 等）。
+
+        ⚠️ ``category`` 是能否取到的**决定因素**（实测 2026-10-08）：
+        * 相册域路径（``/picture/...``）→ ``category=""``（空）即可
+        * **文件空间/共享空间缩略图**
+          （``/file/.File_Syssvc/thumb/0001/7137.jpg``）
+          → 必须 ``category="public"``；传空会 404/403 取不到图。
+
+        ``service`` 实测对结果无影响（``gallery``/``filesvc`` 均可用）；
+        ``usb`` 保持 ``false``（``true`` 会 403）。
+        """
         if not device_path:
             return None
         await self.async_ensure_credentials()
+        query = (
+            f"type=download&fileVer=&category={category}"
+            f"&service={service}&usb=false"
+        )
         url = (
             f"{self._data_base()}{DATA_DOWNLOAD_PATH}"
-            f"{encode_device_path(device_path)}?{DATA_DOWNLOAD_QUERY}"
+            f"{encode_device_path(device_path)}?{query}"
         )
         for attempt in range(2):
             try:

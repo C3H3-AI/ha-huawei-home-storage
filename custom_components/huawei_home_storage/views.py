@@ -99,7 +99,12 @@ async def _serve_image(
         raise web.HTTPNotFound()
     clients = getattr(runtime, "clients", None) or {}
     client = clients.get(account) or runtime.client
-    image = await client.async_fetch_image("/" + path.lstrip("/"))
+    device_path = "/" + path.lstrip("/")
+    # 取图的 category 由**路径**决定（实测 2026-10-08）：
+    #   /picture/...                相册域     → category=""
+    #   /file/.File_Syssvc/thumb/…  共享空间   → category="public"（否则 403/404）
+    category = "public" if device_path.startswith("/file/") else ""
+    image = await client.async_fetch_image(device_path, category=category)
     if not image:
         raise web.HTTPNotFound()
     return web.Response(
