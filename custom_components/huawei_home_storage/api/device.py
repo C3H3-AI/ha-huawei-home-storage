@@ -35,6 +35,8 @@ from ..const import (
     API_PREPARE_UPLOAD,
     API_CANCEL_UPLOAD,
     API_BATCH_OPERATION,
+    API_MKDIR,
+    API_RENAME,
     API_ALL_FILES,
     API_FILE_DETAIL,
     API_FILE_SEARCH,
@@ -804,6 +806,96 @@ class HuaweiDeviceClient:
             raise RuntimeError(f"prepareUpload 未返回会话: {data}")
         return items[0]
 
+    async def async_mkdir(
+        self, path: str, category: str = FILE_FILES_CATEGORY
+    ) -> dict[str, Any]:
+        """新建目录（``/filesvc/mkdir``，抓包实据 + 基线实测 ``code 0``）。
+
+        实据::
+
+            POST /filesvc/mkdir?category=public
+            {"path":"/file/新建文件夹/","redundancy":0}
+            -> {"code":0,"data":{"fid":288511851128439709,...}}
+
+        要点（照抓包形态，缺一个就可能被拒）：
+        * ``path`` 是**设备路径**（``/file/...``），本方法会补上**尾斜杠**
+        * body 是**扁平**的（不是 ``tasks[]`` 数组），且**不要**带 ``Dest-File``
+          头 —— mkdir 的成功形态没有这个头
+        * ``redundancy=0``：重名直接报错，不自动改名
+        * 返回 ``data.fid``（约 2.9e17 的句柄）用于删除；**不要**拿列表里的
+          ``id`` 去删 —— 实测两者不是一回事
+        """
+        path = path if path.endswith("/") else path + "/"
+        data = await self._request(
+            API_MKDIR,
+            method="POST",
+            params={"category": category},
+            json_body={"path": path, "redundancy": 0},
+        )
+        return data.get("data") or {}
+
+    async def async_find_entry(
+        self, path: str, category: str = FILE_FILES_CATEGORY
+    ) -> dict[str, Any] | None:
+        """按路径在**父目录列表**里找出该条目（返回原始条目，含 ``fid`` / ``id``）。
+
+        目录条目的 ``path`` 字段常为空，所以只能列父目录再按名字匹配。
+        找不到时返回 ``None``。重命名要用 ``id``、跨服务复制要用 ``fid``，
+        两者都在返回的条目里。
+        """
+        clean = path.rstrip("/")
+        parent, _, name = clean.rpartition("/")
+        parent = (parent or "") + "/"
+        listing = await self.async_list_files(parent, category=category)
+        for item in listing.get("files") or []:
+            if str(item.get("name")) == name:
+                return item
+        return None
+
+    async def async_resolve_id(
+        self, path: str, category: str = FILE_FILES_CATEGORY
+    ) -> int | None:
+        """按路径解析 filesvc ``id``（重命名要用，见 :meth:`async_rename`）。"""
+        item = await self.async_find_entry(path, category=category)
+        if not item:
+            return None
+        value = item.get("id")
+        if value is None:
+            value = item.get("fid")
+        return int(value) if value is not None else None
+
+    async def async_rename(
+        self,
+        old_path: str,
+        new_path: str,
+        category: str = FILE_FILES_CATEGORY,
+        file_id: int | str | None = None,
+    ) -> dict[str, Any]:
+        """重命名（``/filesvc/rename``，抓包实据 + 实测 ``code 0``）。
+
+        实据::
+
+            POST /filesvc/rename?category=public&id=209104
+            {"newpath":"/file/测试/","oldpath":"/file/新建文件夹/"}
+            -> {"code":0}
+
+        ⚠️ 两点：
+        * query 必须带 **``id``**（该条目的 filesvc ``id``）。不传时用
+          :meth:`async_resolve_id` 列父目录按名字解析（多一次请求）
+        * 路径**按调用方给的形态原样传**：目录带尾斜杠（``/file/旧名/``），
+          文件不带。本方法不做补斜杠，避免把文件名改坏
+        """
+        if file_id is None:
+            file_id = await self.async_resolve_id(old_path, category=category)
+        if file_id is None:
+            raise HuaweiDeviceError(f"找不到路径对应的 id，无法重命名: {old_path}")
+        return await self._request(
+            API_RENAME,
+            method="POST",
+            params={"category": category, "id": str(file_id)},
+            json_body={"newpath": new_path, "oldpath": old_path},
+        )
+
     async def async_delete_paths(
         self,
         paths: list[str],
@@ -823,8 +915,11 @@ class HuaweiDeviceClient:
 
         要点（此前一直失败的根因）：
         * 端点不是 ``/filesvc/remove``（该端点恒 1101），而是 **``batchOperation``**
-        * ``operation=remove`` 决定了动作，``type`` 决定去向：
-          ``recycle``（进回收站，可逆）/ ``delete``（彻底删）
+        * ``operation=remove`` 决定了动作，``type=recycle`` 决定去向（**进回收站**）
+        * ⚠️ ``to_recycle=False``（query 用 ``type=delete``）**实测恒 1101，未解出**：
+          2026-10-08 试过 ``operation=delete`` / ``clean`` / 带 ``redundancy``
+          以及 ``/filesvc/recycleDelFiles`` 的多种 body 形态，全部 1101。
+          因此**永久删除目前做不到**，回收站条目只能在客户端 App 里清
         * 参数嵌在 **``tasks[]`` 数组**里，不是扁平 body
         * ``srcPath`` 是**数组**，目录路径需带尾斜杠
         * ⚠️ body 里的 ``deviceId`` 必须是**配置条目的 device_id**
@@ -895,10 +990,12 @@ class HuaweiDeviceClient:
                        "subTaskId":1,"transId":"777394318487","type":4}]}
             -> {"code":0,"data":{"tasks":[{"taskId":..,"transId":".."}]}}
 
-        ⚠️ 四个易错点（实测，错一个就 ``prog=-1`` 失败）：
+        ⚠️ 四个易错点（实测，错一个就 ``1101``/``prog=-1``）：
         * ``operation`` 是 **``recycle``**（不是 ``remove``）
         * ``type`` 是 **``recover``**
-        * ``rid`` 必须是**数组**
+        * ``rid`` 必须是**字符串的单元素数组**：``["2363"]``。
+          传整数数组 ``[2363]`` 或裸字符串 ``"2363"`` 都返回 ``1101``
+          （2026-10-08 实机对照实测）
         * tasks 内的 ``type`` 用 **4**（目录）/ 0（文件）
 
         ``rid`` 来自 :meth:`async_list_recycle`（必须用 GET 取）。
@@ -908,7 +1005,7 @@ class HuaweiDeviceClient:
             "clientType": DEVICE_CLIENT_TYPE,
             "deviceId": device_id,
             "name": name,
-            "rid": [rid],
+            "rid": [str(rid)],
             "subTaskId": 1,
             "transId": str(random.randint(10**11, 10**12 - 1)),
             "type": item_type,
@@ -974,10 +1071,9 @@ class HuaweiDeviceClient:
     async def async_file_detail(self, path: str, category: str = "public") -> dict[str, Any]:
         """文件/目录详情（``/filesvc/detail``）。
 
-        ⚠️ 参数尚未完全解出（实测 2026-10-08）：
-        * ``{"path": ...}`` → ``code -2``（字段形态对，但值需为**有效**路径）
-        * ``fid`` / ``id`` / ``fids`` → ``1101``（缺字段）
-        保留方法以便后续补参数；调用方应容错。
+        实测（2026-10-08）：``{"path": "/file/"}`` 正常返回
+        ``{name, size, mtime, dirCount, fileCount}``；
+        **路径不存在**时返回 ``code -2``，``fid`` / ``id`` 形态则 ``1101``。
         """
         data = await self._request(
             API_FILE_DETAIL,
@@ -992,9 +1088,8 @@ class HuaweiDeviceClient:
     ) -> dict[str, Any]:
         """按关键字搜索（``/filesvc/search``）。
 
-        ⚠️ HANDOFF §1.6 记录该端点返回 ``1003``；本次实测返回 ``1101``
-        （缺必填字段），说明**它仍在但需要更多参数**，未完整解出。
-        保留方法以便后续补参数，调用方应容错处理。
+        ⚠️ 参数**尚未解出**：多次实测返回 ``1101``（缺必填字段），
+        说明端点仍在但还需要别的参数。保留方法以便后续补，调用方需容错。
         """
         data = await self._request(
             API_FILE_SEARCH,

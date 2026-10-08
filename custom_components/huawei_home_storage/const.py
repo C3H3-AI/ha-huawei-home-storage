@@ -105,6 +105,9 @@ API_PREPARE_UPLOAD = "/filesvc/prepareUpload"
 API_CANCEL_UPLOAD = "/filesvc/cancelUpload"
 # 文件空间批量操作（删除/移动等），靠 query 的 operation= 区分（实测 2026-10-08）
 API_BATCH_OPERATION = "/filesvc/batchOperation"
+# 建目录 / 重命名（抓包实据 + 基线实测 code 0，2026-10-08）
+API_MKDIR = "/filesvc/mkdir"
+API_RENAME = "/filesvc/rename"
 # 全文件视图 / 文件详情 / 搜索（静态提取 + 实测端点存在）
 API_ALL_FILES = "/filesvc/allFiles"
 API_FILE_DETAIL = "/filesvc/detail"
