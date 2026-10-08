@@ -347,6 +347,302 @@
     }
   },
   "services": {
+    "create_folder": {
+      "name": "新建目录",
+      "description": "在文件空间新建目录（path 单个，paths 批量；重名报错，不自动改名）。",
+      "fields": {
+        "path": {
+          "name": "目录路径",
+          "description": "单个目录，需带尾斜杠。"
+        },
+        "paths": {
+          "name": "目录路径（批量）",
+          "description": "设备侧批量接口未解出，这里是逐个建。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        }
+      }
+    },
+    "rename_path": {
+      "name": "重命名",
+      "description": "重命名文件/目录（目录带尾斜杠，文件不带）。",
+      "fields": {
+        "old_path": {
+          "name": "原路径",
+          "description": "要改名的条目路径。"
+        },
+        "new_path": {
+          "name": "新路径",
+          "description": "改名后的路径，需与原路径同一父目录。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        },
+        "file_id": {
+          "name": "条目 id",
+          "description": "留空则自动列父目录解析（多一次请求）。"
+        }
+      }
+    },
+    "move_paths": {
+      "name": "移动文件/目录",
+      "description": "把若干文件/目录移动到一个目标目录（异步任务）。",
+      "fields": {
+        "paths": {
+          "name": "源路径",
+          "description": "目录需带尾斜杠。"
+        },
+        "dest_dir": {
+          "name": "目标目录",
+          "description": "移动到这里，需已存在。"
+        },
+        "category": {
+          "name": "源空间",
+          "description": "user = 我的文件；public = 共享。"
+        },
+        "dest_category": {
+          "name": "目标空间",
+          "description": "留空与源空间相同。"
+        }
+      }
+    },
+    "copy_paths": {
+      "name": "复制文件/目录",
+      "description": "把若干文件/目录复制到一个目标目录（异步任务，目标目录需已存在）。",
+      "fields": {
+        "paths": {
+          "name": "源路径",
+          "description": "目录需带尾斜杠。"
+        },
+        "dest_dir": {
+          "name": "目标目录",
+          "description": "复制到这里，需已存在。"
+        },
+        "category": {
+          "name": "源空间",
+          "description": "user = 我的文件；public = 共享。"
+        },
+        "dest_category": {
+          "name": "目标空间",
+          "description": "留空与源空间相同。"
+        }
+      }
+    },
+    "delete_paths": {
+      "name": "删除文件/目录",
+      "description": "删除文件空间的文件/目录 —— 一律移入回收站（可逆）。",
+      "fields": {
+        "paths": {
+          "name": "路径",
+          "description": "目录需带尾斜杠。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        }
+      }
+    },
+    "upload_file": {
+      "name": "上传文件",
+      "description": "把文本或 HA 主机上的文件上传到设备文件空间。",
+      "fields": {
+        "dest_path": {
+          "name": "目标路径",
+          "description": "例如 /file/备份/note.txt。"
+        },
+        "content": {
+          "name": "文本内容",
+          "description": "与 local_path 二选一。"
+        },
+        "local_path": {
+          "name": "本地文件路径",
+          "description": "HA 主机上的路径，常见可读路径在 /config 下。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        }
+      }
+    },
+    "cancel_upload": {
+      "name": "取消上传",
+      "description": "取消进行中的上传（需 prepareUpload 返回的 fileId）。",
+      "fields": {
+        "file_ids": {
+          "name": "fileId 列表",
+          "description": "要取消的上传文件 id。"
+        }
+      }
+    },
+    "copy_to_album": {
+      "name": "复制到相册",
+      "description": "把文件空间里的照片复制进相册（异步任务）。",
+      "fields": {
+        "paths": {
+          "name": "源文件路径",
+          "description": "文件空间里的照片路径。"
+        },
+        "album_id": {
+          "name": "相册 ID",
+          "description": "目标相册 id。"
+        },
+        "album_name": {
+          "name": "相册名称",
+          "description": "可选，仅随请求带上。"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": "用户/共享相册为 6。"
+        },
+        "fids": {
+          "name": "源文件 fid",
+          "description": "与 paths 一一对应；留空则自动解析。"
+        },
+        "category": {
+          "name": "源空间",
+          "description": "user = 我的文件；public = 共享。"
+        }
+      }
+    },
+    "query_files": {
+      "name": "查询文件",
+      "description": "列出最近/全部/指定目录的文件（只读）。"
+    },
+    "file_detail": {
+      "name": "文件详情",
+      "description": "查询文件/目录详情（设备参数未完全解出，可能返回空）。",
+      "fields": {
+        "path": {
+          "name": "路径",
+          "description": "例如 /file/。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        }
+      }
+    },
+    "photo_info": {
+      "name": "照片元数据",
+      "description": "把相册照片的 fileId 换成完整元数据（含 hdcFilePath 原图路径）。",
+      "fields": {
+        "file_ids": {
+          "name": "照片 fileId 列表",
+          "description": "相册域的文件 id。"
+        }
+      }
+    },
+    "search_files": {
+      "name": "搜索文件",
+      "description": "按关键字搜索文件空间（设备参数未解出，目前返回失败，调用需容错）。",
+      "fields": {
+        "keyword": {
+          "name": "关键字",
+          "description": "要搜索的内容。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        }
+      }
+    },
+    "list_recycle": {
+      "name": "列回收站",
+      "description": "列出回收站条目（返回的 rid 供 recover_recycle 使用）。",
+      "fields": {
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        },
+        "limit": {
+          "name": "条数上限",
+          "description": "最多返回多少条。"
+        },
+        "offset": {
+          "name": "偏移",
+          "description": "翻页用。"
+        }
+      }
+    },
+    "recover_recycle": {
+      "name": "回收站恢复",
+      "description": "从回收站恢复条目（可直接给 rid，或给路径/名字自动匹配）。",
+      "fields": {
+        "rid": {
+          "name": "回收站条目 rid",
+          "description": "从 list_recycle 拿。"
+        },
+        "name": {
+          "name": "条目名",
+          "description": "配合 rid 使用。"
+        },
+        "paths": {
+          "name": "路径",
+          "description": "按路径自动匹配 rid。"
+        },
+        "names": {
+          "name": "名字列表",
+          "description": "按名字自动匹配 rid。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        },
+        "item_type": {
+          "name": "条目类型",
+          "description": "4 = 目录，0 = 文件。"
+        }
+      }
+    },
+    "delete_media": {
+      "name": "移入回收站",
+      "description": "把照片/视频移入回收站（可恢复），不会永久删除。"
+    },
+    "recover_media": {
+      "name": "恢复媒体",
+      "description": "从回收站恢复照片/视频。"
+    },
+    "task_status": {
+      "name": "查询传输任务",
+      "description": "查任务中心：filesvc = 文件空间任务，trans = 跨服务传输任务。",
+      "fields": {
+        "service": {
+          "name": "任务来源",
+          "description": "filesvc 或 trans。"
+        },
+        "task_types": {
+          "name": "任务类型",
+          "description": "留空用默认段（filesvc→400；trans→201/300）。"
+        },
+        "task_category": {
+          "name": "任务分类",
+          "description": "设备侧的任务分类，默认 2。"
+        },
+        "all_tasks": {
+          "name": "取 trans 全表",
+          "description": "走 /trans/getAllTask（不带筛选）。"
+        }
+      }
+    },
+    "duplicate_scan": {
+      "name": "重复照片扫描",
+      "description": "启动或停止重复照片扫描（不会删除照片）。"
+    },
+    "reboot_device": {
+      "name": "重启存储设备",
+      "description": "⚠️ 会中断存储服务约 1-2 分钟（可恢复）；集成永不自动重启。"
+    },
+    "disk_sleep": {
+      "name": "磁盘休眠",
+      "description": "让设备磁盘进入休眠（可恢复，唤醒由设备策略决定）。"
+    },
+    "usb_plug_out": {
+      "name": "弹出 USB 设备",
+      "description": "⚠️ 弹出设备上的 USB 存储（可恢复，但正在读写的文件会中断）。"
+    },
     "refresh_credentials": {
       "name": "刷新设备凭据",
       "description": "重新向华为云申请设备会话凭据（设备报 401 或凭据过期时使用）。",
@@ -356,22 +652,6 @@
           "description": "留空则对第一个已配置的设备执行。"
         }
       }
-    },
-    "duplicate_scan": {
-      "name": "重复照片扫描",
-      "description": "启动或停止重复照片扫描（不会删除照片）。"
-    },
-    "query_files": {
-      "name": "查询文件",
-      "description": "列出最近/全部/指定目录的文件（只读）。"
-    },
-    "delete_media": {
-      "name": "移入回收站",
-      "description": "把照片/视频移入回收站（可恢复），不会永久删除。"
-    },
-    "recover_media": {
-      "name": "恢复媒体",
-      "description": "从回收站恢复照片/视频。"
     }
   },
   "common": {
