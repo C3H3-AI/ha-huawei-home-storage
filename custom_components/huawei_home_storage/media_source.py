@@ -135,7 +135,7 @@ class HuaweiHomeStorageMediaSource(MediaSource):
         if section == "":
             return self._browse_entry(entry_id, runtime, account_key)
         if section == "albums":
-            return self._browse_albums(entry_id, runtime, account_key)
+            return await self._browse_albums(entry_id, runtime, account_key)
         if section == "album":
             return await self._browse_album(entry_id, runtime, rest)
         if section == "files":
@@ -322,15 +322,23 @@ class HuaweiHomeStorageMediaSource(MediaSource):
                 return got
         return runtime.albums_of(album_type)
 
-    def _browse_albums(
+    async def _browse_albums(
         self, entry_id: str, runtime: Any, account_key: str = ""
     ) -> BrowseMediaSource:
+        """相册节点 = 智能分类相册（type=0 扫描结果）+ **共享相册**（type=6）。
+
+        ⚠️ `getAlbumList?albumType=0` 的返回**不含** type=6 的用户自建相册，
+        而客户端「共享 → 共享相册」正是这一类，因此这里必须再请求一次
+        `albumType=6` 去重合并；补取失败只降级，不影响主列表。
+        """
         prefix = _join(entry_id, account_key) if account_key else entry_id
         albums = self._albums_of(runtime, account_key, 0)
         children = []
+        seen: set[tuple[int, int]] = set()
         for album in albums:
             album_type = int(album.get("albumType") or 0)
-            album_id = album.get("albumId")
+            album_id = int(album.get("albumId") or 0)
+            seen.add((album_type, album_id))
             cover = _first_cover(album)
             thumb = cover.get("thumbFilePath") or cover.get("lcdFilePath")
             children.append(
@@ -345,6 +353,34 @@ class HuaweiHomeStorageMediaSource(MediaSource):
                     thumbnail=build_image_url(entry_id, thumb) if thumb else None,
                 )
             )
+
+        # 共享相册（type=6）：albumType=0 扫描不含，单独补取（失败不打断浏览）
+        try:
+            client = self._client_of(runtime, account_key)
+            r6 = await client._request("/gallery/getAlbumList", {"albumType": 6})
+            for album in (r6.get("albumlist") or []):
+                album_type = int(album.get("albumType") or 6)
+                album_id = int(album.get("albumId") or 0)
+                if (album_type, album_id) in seen:
+                    continue
+                seen.add((album_type, album_id))
+                cover = _first_cover(album)
+                thumb = cover.get("thumbFilePath") or cover.get("lcdFilePath")
+                children.append(
+                    BrowseMediaSource(
+                        domain=DOMAIN,
+                        identifier=_join(prefix, "album", album_type, album_id),
+                        media_class=MediaClass.ALBUM,
+                        media_content_type="",
+                        title=f"{album.get('albumName')}（{album.get('num', 0)}）",
+                        can_play=False,
+                        can_expand=True,
+                        thumbnail=build_image_url(entry_id, thumb) if thumb else None,
+                    )
+                )
+        except Exception:
+            pass  # type=6 拉取失败不影响主列表
+
         return BrowseMediaSource(
             domain=DOMAIN,
             identifier=_join(prefix, "albums"),
