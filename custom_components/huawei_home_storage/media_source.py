@@ -29,6 +29,8 @@ from .const import (
     DOMAIN,
     FILE_FILES_CATEGORY,
     ALBUM_PAGE_SIZE,
+    ALBUM_TYPE_ALL,
+    ALBUM_TYPE_USER,
     FILE_ROOT_PATH,
     FILE_TYPE_ALBUM,
     FILE_TYPE_APP,
@@ -236,7 +238,7 @@ class HuaweiHomeStorageMediaSource(MediaSource):
                 key = _account_key(account)
                 masked = _mask_account(account.get("account"))
                 counts = runtime.counts_of_account(key) if key else {}
-                n_albums = len(runtime.albums_of_account(key, 0)) if key else 0
+                n_albums = len(self._merged_albums(runtime, key)) if key else 0
                 children.append(
                     self._node(
                         _join(entry_id, key),
@@ -260,7 +262,8 @@ class HuaweiHomeStorageMediaSource(MediaSource):
         accounts = getattr(runtime, "accounts", None) or []
         main_key = _account_key(accounts[0]) if accounts else ""
         counts = runtime.counts_of_account(account_key or main_key)
-        n_albums = len(self._albums_of(runtime, account_key, 0))
+        # 计数与实际列出的相册一致（含共享相册 type=6），见 _merged_albums
+        n_albums = len(self._merged_albums(runtime, account_key))
         prefix = _join(entry_id, account_key) if account_key else entry_id
         children = [
             self._node(
@@ -322,15 +325,37 @@ class HuaweiHomeStorageMediaSource(MediaSource):
                 return got
         return runtime.albums_of(album_type)
 
+    def _merged_albums(self, runtime: Any, account_key: str) -> list[Any]:
+        """相册全集 = 智能分类相册（``albumType=0``）+ **共享相册**（``albumType=6``）。
+
+        ⚠️ `getAlbumList?albumType=0` 的返回**不含** type=6 的用户自建相册，
+        而客户端「共享 → 共享相册」正是这一类。协调器已经单独取过一次并按
+        ``albumType`` 分桶缓存（见 ``HuaweiAlbumCoordinator``），所以这里不必再打
+        一次设备请求，把两个桶并起来去重即可。
+
+        列表与「共 N 个相册」的计数都走本方法，保证**徽标数字与实际条目一致**。
+        """
+        albums = list(self._albums_of(runtime, account_key, ALBUM_TYPE_ALL))
+        seen = {
+            (int(a.get("albumType") or 0), int(a.get("albumId") or 0)) for a in albums
+        }
+        for album in self._albums_of(runtime, account_key, ALBUM_TYPE_USER):
+            key = (int(album.get("albumType") or 0), int(album.get("albumId") or 0))
+            if key in seen:
+                continue
+            seen.add(key)
+            albums.append(album)
+        return albums
+
     def _browse_albums(
         self, entry_id: str, runtime: Any, account_key: str = ""
     ) -> BrowseMediaSource:
+        """相册节点：智能分类相册（type=0）+ **共享相册**（type=6）。"""
         prefix = _join(entry_id, account_key) if account_key else entry_id
-        albums = self._albums_of(runtime, account_key, 0)
         children = []
-        for album in albums:
+        for album in self._merged_albums(runtime, account_key):
             album_type = int(album.get("albumType") or 0)
-            album_id = album.get("albumId")
+            album_id = int(album.get("albumId") or 0)
             cover = _first_cover(album)
             thumb = cover.get("thumbFilePath") or cover.get("lcdFilePath")
             children.append(
@@ -345,6 +370,7 @@ class HuaweiHomeStorageMediaSource(MediaSource):
                     thumbnail=build_image_url(entry_id, thumb) if thumb else None,
                 )
             )
+
         return BrowseMediaSource(
             domain=DOMAIN,
             identifier=_join(prefix, "albums"),
