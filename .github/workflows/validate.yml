@@ -25,3 +25,16 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+
+  workflow-tests:
+    name: Workflow regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 这些测试守的是「不报错的坏」：Release 静默绑成 untagged-<hash> 时
+      # 草稿照建、日志全绿，只有 HACS 用户收不到更新。没有测试的话，
+      # 下一个人删掉 --verify-tag 也不会有人发现。
+      - name: Run release workflow tests
+        run: |
+          python3 -m pip install -q pyyaml
+          python3 -m unittest _tools.test_release_workflow -v
