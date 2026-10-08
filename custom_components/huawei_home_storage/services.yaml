@@ -1,6 +1,19 @@
+# 华为家庭存储服务定义（HA 界面里的中文名/说明/选择器）
+#
+# ⚠️ 文件空间有两个**独立**空间：category=user（「我的文件」）与
+#    category=public（「共享」）。写操作默认落在 public（与客户端「共享」一致）。
+# ⚠️ 删除类默认走**回收站**（可逆）；只有 permanent: true 才彻底删除。
+
+# ---------------------------------------------------------------------------
+# 设备 / 账号运维
+# ---------------------------------------------------------------------------
 refresh_credentials:
+  name: 刷新设备凭据
+  description: 强制重新申请设备会话凭据（设备报 401 或凭据过期时用）
   fields:
     entry_id:
+      name: 配置条目 ID
+      description: 留空则用第一个可用条目
       required: false
       example: "3f2b9c1e4d5a"
       selector:
@@ -11,46 +24,474 @@ duplicate_scan:
   description: 启动或停止重复照片扫描（不会删除照片）
   fields:
     entry_id:
+      name: 配置条目 ID
       required: false
       selector: {text: {}}
     act:
+      name: 动作
       required: true
       example: start
       selector:
         select:
           options: [start, stop]
 
+reboot_device:
+  name: 重启存储设备
+  description: ⚠️ 会中断存储服务约 1-2 分钟（可恢复）。集成永不自动重启
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+disk_sleep:
+  name: 磁盘休眠
+  description: 让设备磁盘进入休眠（可恢复，唤醒由设备策略决定）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+usb_plug_out:
+  name: 弹出 USB 设备
+  description: ⚠️ 弹出设备上的 USB 存储（可恢复，但正在读写的文件会中断）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+# ---------------------------------------------------------------------------
+# 只读查询
+# ---------------------------------------------------------------------------
 query_files:
   name: 查询文件
   description: 列出最近/全部/指定目录/相册照片（只读）
   fields:
     entry_id:
+      name: 配置条目 ID
       required: false
       selector: {text: {}}
     source:
+      name: 数据源
       required: false
       example: recent
       selector:
         select:
           options: [recent, all, dir, photos]
     dir_path:
+      name: 目录路径
+      description: source=dir 时生效，需带尾斜杠
       required: false
       example: /file/
       selector: {text: {}}
+    category:
+      name: 空间
+      description: user=我的文件，public=共享
+      required: false
+      selector:
+        select:
+          options: [user, public]
     limit:
+      name: 条数上限
       required: false
       example: 20
       selector:
         number: {min: 1, max: 200}
 
+file_detail:
+  name: 文件详情
+  description: 查询文件/目录详情（设备参数未完全解出，可能返回空）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    path:
+      name: 路径
+      required: true
+      example: /file/测试/
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+search_files:
+  name: 搜索文件
+  description: 按关键字搜索文件空间（设备参数未完全解出，可能返回空）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    keyword:
+      name: 关键字
+      required: true
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+task_status:
+  name: 查询传输任务
+  description: 查任务中心（filesvc=文件空间任务，trans=跨服务传输任务）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    service:
+      name: 任务来源
+      required: false
+      selector:
+        select:
+          options: [filesvc, trans]
+    task_types:
+      name: 任务类型
+      description: 留空用默认段（filesvc→400；trans→201/300）
+      required: false
+      selector: {text: {}}
+    task_category:
+      name: 任务分类
+      required: false
+      selector: {number: {min: 0, max: 99}}
+    all_tasks:
+      name: 取 trans 全表
+      description: 走 /trans/getAllTask（不带 taskTypes 筛选）
+      required: false
+      default: false
+      selector: {boolean: {}}
+
+photo_info:
+  name: 照片元数据
+  description: 把相册照片的 fileId 换成完整元数据（含 hdcFilePath 原图路径）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_ids:
+      name: 照片 fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
+
+list_recycle:
+  name: 列回收站
+  description: 列出回收站条目（返回的 rid 供 recover_recycle 使用）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    limit:
+      name: 条数上限
+      required: false
+      selector: {number: {min: 1, max: 500}}
+    offset:
+      name: 偏移
+      required: false
+      selector: {number: {min: 0}}
+
+# ---------------------------------------------------------------------------
+# 文件空间写入（NAS 操作）
+# ---------------------------------------------------------------------------
+create_folder:
+  name: 新建目录
+  description: 在文件空间新建目录（可给 path 单个，或 paths 批多个；重名会报错而不是改名）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    path:
+      name: 目录路径
+      description: 单个目录，需带尾斜杠
+      required: false
+      example: /file/备份/
+      selector: {text: {}}
+    paths:
+      name: 目录路径（批量）
+      description: 与 path 二选一或同给；设备侧批量接口参数未解出，这里是逐个建
+      required: false
+      example: "['/file/备份/', '/file/归档/']"
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+rename_path:
+  name: 重命名
+  description: 重命名文件/目录（目录带尾斜杠，文件不带）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    old_path:
+      name: 原路径
+      required: true
+      example: /file/备份/
+      selector: {text: {}}
+    new_path:
+      name: 新路径
+      required: true
+      example: /file/备份_2026/
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    file_id:
+      name: 条目 id
+      description: 留空则自动列父目录解析（多一次请求）
+      required: false
+      selector: {text: {}}
+
+move_paths:
+  name: 移动文件/目录
+  description: 把若干文件/目录移动到一个目标目录（异步任务）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 源路径
+      description: 目录需带尾斜杠
+      required: true
+      example: "['/file/备份/']"
+      selector:
+        text: {multiple: true}
+    dest_dir:
+      name: 目标目录
+      required: true
+      example: /file/归档/
+      selector: {text: {}}
+    category:
+      name: 源空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    dest_category:
+      name: 目标空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+copy_paths:
+  name: 复制文件/目录
+  description: 把若干文件/目录复制到一个目标目录（同空间，异步任务；目标目录需已存在）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 源路径
+      description: 目录需带尾斜杠
+      required: true
+      example: "['/file/源目录/']"
+      selector:
+        text: {multiple: true}
+    dest_dir:
+      name: 目标目录
+      required: true
+      example: /file/目标目录/
+      selector: {text: {}}
+    category:
+      name: 源空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    dest_category:
+      name: 目标空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+delete_paths:
+  name: 删除文件/目录
+  description: 删除文件空间的文件/目录 —— 一律移入回收站（可逆，用 recover_recycle 还原）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 路径
+      description: 目录需带尾斜杠
+      required: true
+      example: "['/file/临时/']"
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+upload_file:
+  name: 上传文件
+  description: 把文本或 HA 主机上的文件上传到设备文件空间
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    dest_path:
+      name: 目标路径
+      required: true
+      example: /file/备份/ha.txt
+      selector: {text: {}}
+    content:
+      name: 文本内容
+      description: 与 local_path 二选一（文本走这里）
+      required: false
+      selector: {text: {multiline: true}}
+    local_path:
+      name: 本地文件路径
+      description: HA 主机上的路径（容器内常见可读路径为 /config 下）
+      required: false
+      example: /config/backup.tar
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+cancel_upload:
+  name: 取消上传
+  description: 取消进行中的上传（需 prepareUpload 返回的 fileId）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_ids:
+      name: fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
+
+copy_to_album:
+  name: 复制到相册
+  description: 把文件空间里的照片复制进相册（异步任务）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 源文件路径
+      required: true
+      selector:
+        text: {multiple: true}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_name:
+      name: 相册名称
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      description: 用户/共享相册为 6
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+    fids:
+      name: 源文件 fid
+      description: 与 paths 一一对应；留空则自动解析
+      required: false
+      selector:
+        text: {multiple: true}
+    category:
+      name: 源空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+recover_recycle:
+  name: 回收站恢复
+  description: 从回收站恢复条目（可直接给 rid，或给路径/名字自动匹配）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    rid:
+      name: 回收站条目 rid
+      required: false
+      selector: {text: {}}
+    name:
+      name: 条目名
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 路径
+      required: false
+      selector:
+        text: {multiple: true}
+    names:
+      name: 名字列表
+      required: false
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    item_type:
+      name: 条目类型
+      description: 4=目录，0=文件（自动匹配时以回收站返回为准）
+      required: false
+      default: 4
+      selector: {number: {min: 0, max: 8}}
+
+# ---------------------------------------------------------------------------
+# 相册（照片/视频）
+# ---------------------------------------------------------------------------
 delete_media:
   name: 移入回收站
   description: 把照片/视频移入回收站（可恢复，不会永久删除）
   fields:
     entry_id:
+      name: 配置条目 ID
       required: false
       selector: {text: {}}
     file_ids:
+      name: 媒体 fileId 列表
       required: true
       example: "281474976710690"
       selector: {text: {}}
@@ -60,9 +501,11 @@ recover_media:
   description: 从回收站恢复照片/视频
   fields:
     entry_id:
+      name: 配置条目 ID
       required: false
       selector: {text: {}}
     file_ids:
+      name: 媒体 fileId 列表
       required: true
       example: "281474976710690"
       selector: {text: {}}

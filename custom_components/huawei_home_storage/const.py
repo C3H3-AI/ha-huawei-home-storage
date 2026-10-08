@@ -91,9 +91,7 @@ DEVICE_CLIENT_TYPE = 3
 
 API_HEARTBEAT = "/access/heartBeat"
 API_ALBUM_LIST = "/gallery/getAlbumList"
-API_ALBUM_MEMBERS = "/gallery/albumMembIncInfo"
-API_ALBUM_INC = "/gallery/albumIncInfo"
-API_ALBUM_CFG = "/gallery/albumCfg"
+API_ALBUM_INC = "/gallery/albumIncInfo"          # 增量表；集成未使用（见 API 清单）
 API_PHOTOS_INC = "/gallery/getIncPhotosInfoTable"
 API_QUERY_BIN = "/gallery/queryBin"
 API_FILES = "/filesvc/files"
@@ -105,8 +103,11 @@ API_PREPARE_UPLOAD = "/filesvc/prepareUpload"
 API_CANCEL_UPLOAD = "/filesvc/cancelUpload"
 # 文件空间批量操作（删除/移动等），靠 query 的 operation= 区分（实测 2026-10-08）
 API_BATCH_OPERATION = "/filesvc/batchOperation"
+# 建目录 / 重命名（抓包实据 + 基线实测 code 0，2026-10-08）
+API_MKDIR = "/filesvc/mkdir"
+API_RENAME = "/filesvc/rename"
 # 全文件视图 / 文件详情 / 搜索（静态提取 + 实测端点存在）
-API_ALL_FILES = "/filesvc/allFiles"
+API_FILES_ALL = "/filesvc/allFiles"
 API_FILE_DETAIL = "/filesvc/detail"
 API_FILE_SEARCH = "/filesvc/search"
 # 传输任务：移动 / 复制 / 跨服务复制（抓包实据 2026-10-08）
