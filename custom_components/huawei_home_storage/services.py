@@ -60,6 +60,11 @@ SERVICE_SEARCH_FILES = "search_files"
 SERVICE_PHOTO_INFO = "photo_info"
 SERVICE_TASK_STATUS = "task_status"
 SERVICE_CLEAN_TASK_RECORDS = "clean_task_records"
+SERVICE_ADD_TO_ALBUM = "add_to_album"
+SERVICE_SHARE_TO_PERSON = "share_to_person"
+SERVICE_ALBUM_INFO = "album_info"
+SERVICE_ALBUM_CHANGES = "album_changes"
+SERVICE_GET_TASK = "get_task"
 # ---- 设备级运维 ----
 SERVICE_REBOOT_DEVICE = "reboot_device"
 SERVICE_DISK_SLEEP = "disk_sleep"
@@ -324,6 +329,108 @@ async def async_register_services(hass: HomeAssistant) -> None:
         failed = (result.get("data") or {}).get("errorIdList") or []
         return {"ok": ok and not failed, "count": len(ids),
                 "failed_ids": failed, "error": dev_err, "result": result}
+
+    async def _add_to_album(call: "ServiceCall") -> "ServiceResponse":
+        """把**已有的照片**加进相册（``/gallery/addAlbumMemb``）。
+
+        加的是**相册域的 fileId**（不是文件空间的 fid）：从相册浏览或
+        ``query_files source=photos`` 里取。重复添加返回 suc（幂等），
+        所以以 ``failIds`` 为空为准。
+        """
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        ids = [int(i) for i in call.data["file_ids"]]
+        album_id = int(call.data["album_id"])
+        _LOGGER.warning("把 %d 张照片加入相册 %s", len(ids), album_id)
+        try:
+            result = await runtime.client.async_add_album_members(
+                album_id, ids,
+                album_name=call.data.get("album_name") or "",
+                album_type=int(call.data.get("album_type") or 6),
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("加入相册失败(%s): %s", album_id, exc)
+            return {"ok": False, "album_id": album_id, "error": str(exc)}
+        ok, dev_err = _device_ok(result)
+        failed = result.get("failIds") or []
+        suc = result.get("sucIds") or []
+        return {"ok": ok and not failed, "album_id": album_id,
+                "added": len(suc), "failed_ids": failed,
+                "error": dev_err, "result": result}
+
+    async def _album_info(call: "ServiceCall") -> "ServiceResponse":
+        """单个相册的元数据 + **封面原图路径**（相册列表里 coverInfo 为空时的兜底）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            data = await runtime.client.async_get_album_cfg(
+                int(call.data["album_id"]),
+                int(call.data.get("album_type") or 6),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        cover = (data.get("coverInfo") or [{}])[0] if data.get("coverInfo") else {}
+        return {"ok": True, "album_id": call.data["album_id"],
+                "name": data.get("albumName"),
+                "cover_original": cover.get("hdcFilePath"),
+                "cover_large": cover.get("lcdFilePath"),
+                "result": data}
+
+    async def _album_changes(call: "ServiceCall") -> "ServiceResponse":
+        """相册增量表：哪些相册有变动（只读）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            items = await runtime.client.async_get_album_inc(
+                int(call.data.get("pre_id") or 0),
+                int(call.data.get("num") or 500),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "count": len(items), "items": items}
+
+    async def _share_to_person(call: "ServiceCall") -> "ServiceResponse":
+        """把照片共享到人物相册（``ownerId`` 从设备用户列表取）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        ids = [int(i) for i in call.data["file_ids"]]
+        _LOGGER.warning("共享 %d 张照片到人物 ownerId=%s", len(ids),
+                        call.data.get("owner_id"))
+        try:
+            result = await runtime.client.async_add_share_to_person(
+                int(call.data["album_id"]), ids,
+                int(call.data["owner_id"]),
+                album_name=call.data.get("album_name") or "",
+                album_type=int(call.data.get("album_type") or 6),
+                file_names=call.data.get("file_names"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("共享到人物失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        ok, dev_err = _device_ok(result)
+        return {"ok": ok, "count": len(ids), "error": dev_err, "result": result}
+
+    async def _get_task(call: "ServiceCall") -> "ServiceResponse":
+        """按 taskId 查单个任务详情（``/<service>/getTaskStatus``）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            result = await runtime.client.async_get_single_task(
+                int(call.data["task_id"]),
+                category=call.data.get("category") or DEFAULT_CATEGORY,
+                service=call.data.get("service") or "filesvc",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        ok, dev_err = _device_ok(result)
+        tasks = (result.get("data") or {}).get("tasks") or []
+        return {"ok": ok, "count": len(tasks), "tasks": tasks,
+                "error": dev_err, "result": result}
 
     async def _photo_info(call: "ServiceCall") -> "ServiceResponse":
         """把相册照片的 ``fileId`` 换成完整元数据（含 ``hdcFilePath`` 原图路径）。"""
@@ -924,6 +1031,62 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 cv.ensure_list, [vol.Coerce(int)], vol.Length(min=1, max=MAX_BATCH)
             ),
             vol.Optional("category"): CATEGORY,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_GET_TASK, _get_task,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("task_id"): vol.Coerce(int),
+            vol.Optional("service", default="filesvc"): vol.In(("filesvc", "trans")),
+            vol.Optional("category"): CATEGORY,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ALBUM_INFO, _album_info,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("album_id"): vol.Coerce(int),
+            vol.Optional("album_type", default=6): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ALBUM_CHANGES, _album_changes,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Optional("pre_id", default=0): vol.Coerce(int),
+            vol.Optional("num", default=500): vol.All(int, vol.Range(min=1, max=500)),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SHARE_TO_PERSON, _share_to_person,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("album_id"): vol.Coerce(int),
+            vol.Required("owner_id"): vol.Coerce(int),
+            vol.Required("file_ids"): vol.All(
+                cv.ensure_list, [vol.Coerce(int)], vol.Length(min=1, max=MAX_BATCH)
+            ),
+            vol.Optional("album_name"): str,
+            vol.Optional("album_type", default=6): vol.Coerce(int),
+            vol.Optional("file_names"): vol.All(cv.ensure_list, [str]),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ADD_TO_ALBUM, _add_to_album,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("album_id"): vol.Coerce(int),
+            vol.Required("file_ids"): vol.All(
+                cv.ensure_list, [vol.Coerce(int)], vol.Length(min=1, max=MAX_BATCH)
+            ),
+            vol.Optional("album_name"): str,
+            vol.Optional("album_type", default=6): vol.Coerce(int),
         }),
         supports_response=SupportsResponse.ONLY,
     )

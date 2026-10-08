@@ -91,7 +91,9 @@ DEVICE_CLIENT_TYPE = 3
 
 API_HEARTBEAT = "/access/heartBeat"
 API_ALBUM_LIST = "/gallery/getAlbumList"
-API_ALBUM_INC = "/gallery/albumIncInfo"          # 增量表；集成未使用（见 API 清单）
+API_ALBUM_INC = "/gallery/albumIncInfo"          # 相册增量表（GET，抓包实据 2026-10-09）
+API_ALBUM_MEMBERS = "/gallery/albumMembIncInfo"  # 成员增量表（GET，抓包实据 2026-10-09）
+API_ALBUM_CFG = "/gallery/albumCfg"              # 相册元数据+封面原图（GET，抓包实据 2026-10-09）
 API_PHOTOS_INC = "/gallery/getIncPhotosInfoTable"
 API_QUERY_BIN = "/gallery/queryBin"
 API_FILES = "/filesvc/files"
@@ -116,6 +118,9 @@ API_TRANS_COPY = "/trans/copy"
 API_TRANS_ACROSSCOPY = "/trans/acrosscopy"
 # 任务中心：清历史记录（抓包实据 2026-10-09，字段是 taskIdList）
 API_CLEAN_TASK_RECORD = "/filesvc/cleanTaskRecord"
+# 相册成员：把已有照片加进相册 / 共享到人物（抓包实据 2026-10-09）
+API_ADD_ALBUM_MEMB = "/gallery/addAlbumMemb"
+API_ADD_SHARE_TO_PERSON = "/gallery/addShareToPerson"
 API_DISK_CHANGE = "/devmanage/diskChange"
 API_USER_MANAGE = "/account/userManageInfo"
 API_USER_DATA = "/account/userDataStatisInfo"

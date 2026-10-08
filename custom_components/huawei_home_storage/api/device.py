@@ -22,7 +22,11 @@ from typing import Any
 import aiohttp
 
 from ..const import (
+    API_ALBUM_CFG,
+    API_ALBUM_INC,
     API_ALBUM_LIST,
+    API_ALBUM_MEMBERS,
+    API_ADD_SHARE_TO_PERSON,
     API_DISK_CHANGE,
     API_FILES,
     API_HEARTBEAT,
@@ -77,6 +81,8 @@ from ..const import (
     FILE_ROOT_PATH,
     FILES_PAGE_SIZE,
     ALBUM_PAGE_SIZE,
+    ALBUM_TYPE_ALL,
+    ALBUM_TYPE_USER,
     REQUEST_TIMEOUT,
 )
 from .huawei_cloud import DeviceCredentials, HuaweiCloudAuthError, HuaweiCloudError
@@ -362,9 +368,156 @@ class HuaweiDeviceClient:
         return data.get("code", 0) == 0
 
     async def async_get_album_list(self, album_type: int = 0) -> list[dict[str, Any]]:
-        """``albumType=0`` 返回全部相册（含系统/人脸/地点/场景/最近删除）。"""
+        """``albumType=0`` 返回全部相册（含系统/人脸/地点/场景/最近删除）。
+
+        ⚠️ **不含 type=6**（用户/共享相册），要单独取一次 ``album_type=6``。
+        """
         data = await self._request(API_ALBUM_LIST, {"albumType": album_type})
         return data.get("albumlist") or []
+
+    async def async_get_album_cfg(
+        self, album_id: int, album_type: int = ALBUM_TYPE_USER
+    ) -> dict[str, Any]:
+        """单个相册的元数据 + **封面原图路径**（``/gallery/albumCfg``）。
+
+        ⚠️ 必须用 **GET**（POST 会返回 ``30102``），参数走 query：
+        ``?albumId=&albumType=``（抓包实据 + 206 实测 2026-10-09）。
+
+        返回 ``data`` 含 ``albumName`` / ``albumType`` 与 ``coverInfo[]``，
+        每项有 ``hdcFilePath``（原图）、``lcdFilePath``（大图）、``coverId``。
+        **这正是拿单个相册封面原图的途径** —— 相册列表里的 ``coverInfo``
+        可能为空，此时用它兜底。
+        """
+        data = await self._request(
+            API_ALBUM_CFG, {"albumId": int(album_id), "albumType": int(album_type)}
+        )
+        return data.get("data") or {}
+
+    async def async_get_album_inc(
+        self, pre_id: int = 0, num: int = 500
+    ) -> list[dict[str, Any]]:
+        """相册增量表（``/gallery/albumIncInfo``，**GET**）。
+
+        返回 ``[{albumId, albumType, optType, optTime}]``，用于发现「哪些相册
+        有变动」。POST 形态不可用（code 1）。
+        """
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            API_ALBUM_INC,
+            {"clientType": DEVICE_CLIENT_TYPE, "deviceId": creds.cloud_dev_id,
+             "num": int(num), "preId": int(pre_id)},
+        )
+        d = data.get("data")
+        return d if isinstance(d, list) else []
+
+    async def async_get_album_members_inc(
+        self, album_type: int, pre_id: int = 0, num: int = 500
+    ) -> dict[str, Any]:
+        """相册成员增量表（``/gallery/albumMembIncInfo``，**GET**）。
+
+        返回 ``{data: [...], lastId, galleryDbVersion}``。⚠️ 这是**增量同步**
+        接口（给客户端同步本地库用）：**没有路径**、列不全照片，
+        **不要拿它列相册内容**（实测翻 8 页只累积 18 条）。
+        POST 形态返回 ``code 1``。
+        """
+        data = await self._request(
+            API_ALBUM_MEMBERS,
+            {"albumType": int(album_type), "preId": int(pre_id), "num": int(num)},
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def _resolve_file_names(
+        self, file_ids: list[int] | list[str], known: list[str]
+    ) -> list[str]:
+        """为 ``addShareToPerson`` 补全文件名（该端点要求 ``fileName`` 非空）。
+
+        优先用已有的；没有就查 :meth:`async_get_photos_info`，取 ``fileSrcPath``
+        的最后一段（退到 ``hdcFilePath``）；都没有则用 ``<fileId>.jpg`` 占位。
+        """
+        out: list[str] = []
+        try:
+            metas = await self.async_get_photos_info(file_ids)
+        except Exception:  # noqa: BLE001
+            metas = []
+        by_id = {}
+        for m in metas or []:
+            try:
+                by_id[int(m.get("fileId"))] = m
+            except (TypeError, ValueError):
+                continue
+        for i, f in enumerate(file_ids):
+            if i < len(known) and known[i]:
+                out.append(str(known[i]))
+                continue
+            try:
+                fid = int(f)
+            except (TypeError, ValueError):
+                out.append(str(f))
+                continue
+            meta = by_id.get(fid) or {}
+            src = str(meta.get("fileSrcPath") or meta.get("hdcFilePath") or "")
+            name = src.rsplit("/", 1)[-1] if src else ""
+            out.append(name or f"{fid}.jpg")
+        return out
+
+    async def async_add_share_to_person(
+        self,
+        album_id: int,
+        file_ids: list[int] | list[str],
+        owner_id: int,
+        album_name: str = "",
+        album_type: int = ALBUM_TYPE_USER,
+        file_names: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """把照片共享到**人物相册**（``/gallery/addShareToPerson``，实测 ``code 0``）。
+
+        抓包实据（2026-10-09）::
+
+            POST /gallery/addShareToPerson
+            {"addTime":1791412246000,"albumId":14,"albumName":"...","albumType":6,
+             "clientType":3,"deviceId":"...",
+             "fileIds":[{"fileId":281474976755919,
+                         "fileName":"xxx.png","ownerId":10001}],
+             "subTaskId":1,"transId":"291643247819"}
+            -> {"code":0,"des":"suc","taskId":0}
+
+        与 :meth:`async_add_album_members` 的区别：那个用 ``membs:[{fileId}]``
+        加到普通相册；这个用 ``fileIds:[{fileId,fileName,ownerId}]`` 共享到
+        人物（``ownerId`` 是设备用户 id，从 :meth:`async_get_device_users` 取）。
+
+        ⚠️ **``fileName`` 也是必填**（实测 2026-10-09：不传/空串会返回 ``30102``）。
+        未提供 ``file_names`` 时本方法会自动补全（见 :meth:`_resolve_file_names`）。
+        """
+        creds = await self.async_ensure_credentials()
+        import time as _time      # 与 async_upload_file 一致：模块级未 import time
+
+        names = list(file_names or [])
+        if not names or any(not n for n in names[: len(file_ids)]):
+            names = await self._resolve_file_names(file_ids, names)
+        # ⚠️ albumName 同样是必填（实测：不传返回 30102）→ 留空时按 albumId 反查
+        if not album_name:
+            album_name = await self._album_name_by_id(int(album_id))
+
+        return await self._request(
+            API_ADD_SHARE_TO_PERSON,
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "albumId": int(album_id),
+                "albumName": album_name,
+                "albumType": int(album_type),
+                "addTime": int(_time.time() * 1000),
+                "fileIds": [
+                    {"fileId": int(f),
+                     "fileName": names[i] if i < len(names) else "",
+                     "ownerId": int(owner_id)}
+                    for i, f in enumerate(file_ids)
+                ],
+                "subTaskId": 1,
+                "transId": str(random.randint(10**11, 10**12 - 1)),
+            },
+        )
 
     async def async_upload_file(
         self,
@@ -914,6 +1067,84 @@ class HuaweiDeviceClient:
         )
         d = data.get("data") or []
         return d if isinstance(d, list) else []
+
+    async def async_add_album_members(
+        self,
+        album_id: int,
+        file_ids: list[int] | list[str],
+        album_name: str = "",
+        album_type: int = ALBUM_TYPE_USER,
+    ) -> dict[str, Any]:
+        """把**已有的照片**加进相册（``/gallery/addAlbumMemb``，实测 ``code 0``）。
+
+        抓包实据（2026-10-09 从 `capture_all_1791417873.jsonl` 挖出）::
+
+            POST /gallery/addAlbumMemb
+            {"clientType":3,"deviceId":"9a762c46a872-...","albumId":13,
+             "albumName":"新建相册","albumType":6,
+             "membs":[{"fileId":281474976755920}],
+             "addTime":1791412165000}
+            -> {"code":0,"des":"suc","failIds":[],
+                "sucIds":[{"fileId":281474976755920}]}
+
+        要点：
+        * 加的是**相册域（gallery）的 fileId**，不是文件空间的 ``fid``
+          —— 从 :meth:`async_get_album_photos` 或照片增量表取
+        * 返回 ``sucIds``（成功）/ ``failIds``（失败）数组。重复添加同一张
+          也返回 suc（幂等），所以 ``failIds`` 为空才算真的都进去了
+        * ``albumType`` 默认 6（用户/共享相册）
+        * ⚠️ ``albumName`` **是必填**：不传会返回 ``30101``（实测 2026-10-09）。
+          留空时本方法会自动查相册列表补全（type=6 优先，再查 type=0）
+        """
+        creds = await self.async_ensure_credentials()
+        if not album_name:
+            album_name = await self._album_name_by_id(int(album_id))
+        return await self._request(
+            "/gallery/addAlbumMemb",
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "albumId": int(album_id),
+                "albumName": album_name,
+                "albumType": int(album_type),
+                "membs": [{"fileId": int(f)} for f in file_ids],
+                "addTime": int(asyncio.get_event_loop().time() * 1000),
+            },
+        )
+
+    async def _album_name_by_id(self, album_id: int) -> str:
+        """按 albumId 反查相册名（``addAlbumMemb`` 的 albumName 是必填）。
+
+        ⚠️ ``albumType=0`` 的返回**不含 type=6**，所以两个都要查（已知结论）。
+        """
+        for a_type in (ALBUM_TYPE_USER, ALBUM_TYPE_ALL):
+            try:
+                albums = await self.async_get_album_list(a_type)
+            except Exception:  # noqa: BLE001
+                continue
+            for a in albums or []:
+                try:
+                    if int(a.get("albumId")) == int(album_id):
+                        return str(a.get("albumName") or "")
+                except (TypeError, ValueError):
+                    continue
+        return ""
+
+    async def async_get_single_task(
+        self, task_id: int, category: str = "user", service: str = "filesvc"
+    ) -> dict[str, Any]:
+        """查**单个**任务详情（``/<service>/getTaskStatus``，实测 ``code 0``）。
+
+        抓包实据（2026-10-09）：body 只有 ``{"category":"user","taskId":18}``。
+        与 :meth:`async_get_task_status`（批量、要 taskTypes）互补：这个按
+        ``taskId`` 精确查一个，返回同构的 ``data.tasks[]``（通常只有一项）。
+        """
+        return await self._request(
+            f"/{service}/getTaskStatus",
+            method="POST",
+            json_body={"category": category, "taskId": int(task_id)},
+        )
 
     async def async_recycle_recover(
         self, rid: int | str, name: str = "", device_id: str = "",
