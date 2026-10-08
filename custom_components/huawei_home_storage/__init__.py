@@ -323,6 +323,16 @@ def _build_client(
     )
 
 
+def _notify_backup_agents(hass: HomeAssistant) -> None:
+    """通知 HA 重新收集备份目标（backup 平台监听器）。"""
+    try:
+        from .backup import async_notify_backup_agents_changed  # noqa: PLC0415
+
+        async_notify_backup_agents_changed(hass)
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("通知备份目标变更失败（不影响集成）", exc_info=True)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: HuaweiConfigEntry) -> bool:
     """Set up Huawei Home Storage from a config entry."""
     _migrate_unique_id(hass, entry)
@@ -424,6 +434,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: HuaweiConfigEntry) -> bo
     _prune_stale_account_devices(hass, entry, accounts)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    # 备份目标新增一个 → 让 HA 重新收集（实现 backup 平台监听器时才有效）
+    _notify_backup_agents(hass)
+
     return True
 
 

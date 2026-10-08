@@ -4,8 +4,9 @@
 ``async_upload_file`` 签名是 ``payload: bytes``（整份进内存）——
 拿它传大文件会把 HA 的内存吃满。
 
-所以这里只放**传输原语**，供需要流式处理的功能复用
-（当前是面板的上传视图 ``views.py``）。
+所以这里只放**传输原语**，供需要流式处理的功能复用：
+  * 上传：面板上传视图（``views.py``）、HA 备份代理（``backup.py``）
+  * 下载：HA 备份代理（恢复时读取设备上的 tar）
 
 这样也避免改动 ``api/device.py`` —— 上游正在频繁改那个文件，
 少一处交集就少一处冲突。
@@ -28,7 +29,7 @@ from typing import Any
 import aiohttp
 
 from .api.device import encode_device_path
-from .const import API_PREPARE_UPLOAD, DEVICE_CLIENT_TYPE
+from .const import API_PREPARE_UPLOAD, DATA_DOWNLOAD_PATH, DEVICE_CLIENT_TYPE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -197,3 +198,24 @@ async def upload_stream(
             "上传字节数与声明不一致：实发 %s / 声明 %s（%s）", sent, total_size, dest_path
         )
     return last or {"code": 0, "data": {"path": dest_path}}
+
+
+async def download_stream(
+    client: Any,
+    device_path: str,
+    *,
+    category: str = "user",
+    chunk_size: int = 256 * 1024,
+) -> AsyncIterator[bytes]:
+    """流式下载设备文件（供备份恢复用，内存占用 ≈ 一个 chunk）。"""
+    await client.async_ensure_credentials()
+    query = f"type=download&fileVer=&category={category}&service=filesvc&usb=false"
+    url = f"{client._data_base()}{DATA_DOWNLOAD_PATH}{encode_device_path(device_path)}?{query}"  # noqa: SLF001
+    timeout = aiohttp.ClientTimeout(total=None, sock_read=120)
+    async with client._session.get(  # noqa: SLF001
+        url, headers=client._data_headers(), timeout=timeout  # noqa: SLF001
+    ) as resp:
+        if resp.status != 200:
+            raise TransferError(f"下载失败 HTTP {resp.status}（{device_path}）")
+        async for block in resp.content.iter_chunked(chunk_size):
+            yield block
