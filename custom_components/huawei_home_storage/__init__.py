@@ -46,6 +46,7 @@ from .coordinator import (
     HuaweiStorageData,
 )
 from .entity import _account_key, find_main_device, main_device_identifier, main_device_info
+from .account_login import async_register_websocket
 from .panel import async_register_panel, async_unregister_panel
 from .services import async_register_services
 from .views import async_register_views, async_unregister_views
@@ -391,6 +392,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HuaweiConfigEntry) -> bo
     # 先把 UI 与接口注册好：首次云端刷新（MQTT startService 等）可能偏慢，
     # 若排在后面，面板与状态接口会长时间不可用。
     async_register_views(hass)
+    async_register_websocket(hass)
     await async_register_panel(hass)
     await async_register_services(hass)
 

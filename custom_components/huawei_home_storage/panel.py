@@ -21,6 +21,14 @@ try:
 except Exception:  # noqa: BLE001
     version = "0"
 
+# 再拼上面板文件的修改时间：面板代码一改，URL 就变。
+# 只靠 manifest 版本号不够——开发期版本号不变，浏览器会一直吃旧缓存，
+# 于是「明明部署了新面板却看到旧界面」（2026-10-07 实际踩过）。
+try:
+    version = f"{version}.{int((Path(__file__).parent / 'www' / 'huawei-storage-panel.js').stat().st_mtime)}"
+except Exception:  # noqa: BLE001
+    pass
+
 PANEL_URL_PATH = "huawei-storage"
 PANEL_TITLE = "家庭存储"
 PANEL_ICON = "mdi:nas"
