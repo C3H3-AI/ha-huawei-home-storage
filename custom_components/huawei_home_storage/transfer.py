@@ -81,6 +81,8 @@ async def upload_stream(
     ``total_size`` 必须准确（``prepareUpload`` 要声明大小）；调用方从
     ``Content-Length`` 或备份元数据里拿。
     """
+    if total_size is None or total_size <= 0:
+        raise TransferError(f"上传大小无效（{total_size}）：{dest_path}")
     await client.async_ensure_credentials()
     fname = dest_path.rstrip("/").rsplit("/", 1)[-1]
     src_path = f"/win/C/tmp/{fname}"
@@ -193,9 +195,18 @@ async def upload_stream(
         if on_progress:
             on_progress(sent)
 
+    # ⚠️ 声明大小与实发不符 = 设备在等更多字节，文件是不完整的。
+    # 之前只 warning 并返回成功，会让一个残缺的备份被当成成功的备份
+    # （恢复时才发现打不开）。这里必须失败，让 HA 重试或报错。
     if sent != total_size:
-        _LOGGER.warning(
-            "上传字节数与声明不一致：实发 %s / 声明 %s（%s）", sent, total_size, dest_path
+        raise TransferError(
+            "上传字节数与声明不一致：实发 %s / 声明 %s（%s）—— 文件不完整，已中止"
+            % (sent, total_size, dest_path)
+        )
+    if total_size > 0 and not last:
+        # 有数据但没拿到设备的收尾确认，同样视为未真正完成
+        raise TransferError(
+            "设备未返回上传完成确认（%s，%s 字节）" % (dest_path, total_size)
         )
     return last or {"code": 0, "data": {"path": dest_path}}
 

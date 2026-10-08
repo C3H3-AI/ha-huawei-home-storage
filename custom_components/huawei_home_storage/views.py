@@ -122,6 +122,17 @@ async def _serve_image(
     )
 
 
+def mask_sn(value: str | None) -> str:
+    """设备序列号脱敏：保留前 4 与后 4。
+
+    ⚠️ 序列号是仓库隐私红线，任何下发到前端/日志/诊断的输出都必须过这里。
+    """
+    text = str(value or "")
+    if not text:
+        return ""
+    return text if len(text) <= 8 else text[:4] + "****" + text[-4:]
+
+
 def mask_account(value: str) -> str:
     """账号脱敏：手机号保留前 3 后 4；邮箱保留首字符与域名。"""
     text = str(value or "")
@@ -328,15 +339,22 @@ class HuaweiStorageStatusView(HomeAssistantView):
                     # 面板展示：USB 接入；用户**只给数量**（uid/昵称属敏感信息，不下发前端）
                     "usb": data.get("usb") or {},
                     "device_users": [{}] * len(data.get("device_users") or []),
-                    "credentials": creds.to_dict() if creds else None,
+                    # ⚠️ 整个凭据对象含**设备序列号**与其它凭据字段，
+                    # 实测把完整序列号 A4DEQ…0588 直接下发给了前端。
+                    # 面板只需要「有没有凭据」这一点信息，这里不再下发明细。
+                    "credentials": bool(creds),
                     "last_update_success": runtime.last_update_success,
                     # 多账号：每个账号的隧道与相册统计
                     "accounts": [
                         {
-                            "key": a.get("key"),
-                            "account": a.get("account") or "",
+                            # ⚠️ 这些字段**原样下发会让手机号进日志/诊断/前端**。
+                            # label 早已脱敏，但同一层的 key/account/uid 漏了 ——
+                            # 实测 status 接口直接返回完整手机号 13736776363。
+                            # 面板只需要一个稳定的账号标识用于切换，脱敏值同样唯一。
+                            "key": mask_account(a.get("key")),
+                            "account": mask_account(a.get("account")),
                             "user": a.get("user") or "",
-                            "uid": a.get("uid") or "",
+                            "uid": mask_account(a.get("uid")),
                             # 面板用：脱敏显示名 + 是否默认账号
                             "label": mask_account(a.get("account") or a.get("user") or "账号"),
                             "is_primary": idx == 0,
@@ -353,10 +371,11 @@ class HuaweiStorageStatusView(HomeAssistantView):
                     ],
                     # 以下用于面板展示（MAC 不放进设备注册，避免与路由器等集成冲突）
                     "device_mac": cfg.get(CONF_DEVICE_MAC) or "",
-                    "device_sn": cfg.get(CONF_DEVICE_SN) or "",
+                    # ⚠️ 设备序列号属红线，面板只展示脱敏形式
+                    "device_sn": mask_sn(cfg.get(CONF_DEVICE_SN)),
                     "device_model": cfg.get(CONF_DEVICE_MODEL) or "",
                     "login_method": cfg.get(CONF_LOGIN_METHOD) or "",
-                    "account": cfg.get(CONF_ACCOUNT) or "",
+                    "account": mask_account(cfg.get(CONF_ACCOUNT)),
                     "host": cfg.get(CONF_HOST) or "",
                     # 面板扩展：低频信息协调器的数据（固件/CPU/内存/网络/健康/Samba/插件）
                     "hardware": _hardware(runtime),
@@ -583,7 +602,10 @@ class HuaweiStorageAlbumsView(HomeAssistantView):
                 except Exception:  # noqa: BLE001
                     pass
 
-        return web.json_response({"account": key, "total": total, "groups": groups})
+        # ⚠️ key 是账号本身（手机号），原样回给前端等于把手机号放进页面/日志
+        return web.json_response(
+            {"account": mask_account(key), "total": total, "groups": groups}
+        )
 
 
 class HuaweiStorageAlbumPhotosView(HomeAssistantView):

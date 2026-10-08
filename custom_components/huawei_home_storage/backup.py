@@ -260,7 +260,14 @@ class HuaweiStorageBackupAgent(BackupAgent):
                 f"备份目录不可用：{self._dir}（请先在 App/PC 端确认该目录存在，"
                 f"或改成已有目录）"
             )
-        stream = await open_stream()
+        if not backup.size or backup.size <= 0:
+            raise BackupAgentError(
+                f"备份大小无效（{backup.size} 字节），拒绝上传：{backup.name}"
+            )
+        try:
+            stream = await open_stream()
+        except Exception as err:  # noqa: BLE001
+            raise BackupAgentError(f"无法读取备份数据流：{err}") from err
 
         def report(uploaded: int) -> None:
             on_progress(bytes_uploaded=uploaded)
