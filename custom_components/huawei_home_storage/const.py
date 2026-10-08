@@ -158,6 +158,13 @@ FILE_TYPE_APP = 6
 FILE_TYPE_FILE = 8
 FILE_ROOT_PATH = "/file/"           # 文件空间根目录（Dest-File 用，必须带尾斜杠）
 
+# ---- 备份目标（backup.py）----
+CONF_BACKUP_DIR = "backup_dir"        # 备份存放目录（默认 /file/HomeAssistant/）
+CONF_BACKUP_SPACE = "backup_space"    # user = 我的文件；public = 共享
+DEFAULT_BACKUP_DIR = "/file/HomeAssistant/"
+BACKUP_META_SUFFIX = ".ha-backup.json"  # 与 tar 同名的边车元数据（列出备份时只读它）
+DATA_BACKUP_AGENT_LISTENERS = "huawei_home_storage_backup_agent_listeners"  # 备份目标监听器
+
 # 相册类型（getAlbumList albumType）
 ALBUM_TYPE_ALL = 0                  # 0 = 返回全部相册（推荐）
 ALBUM_TYPE_SYS_ALL = 1              # 所有照片（albumId=1）
