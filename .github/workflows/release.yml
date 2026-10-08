@@ -1,0 +1,202 @@
+name: Auto Release Draft
+
+# manifest.json 的 version 变化 → 建 tag → 建草稿 Release。
+# 维护者在 Releases 页面确认草稿后手动 Publish。
+#
+# 设计要点（每条都对应一次真实事故，别删）：
+#   * tag 必须**先显式创建并推送**，再建 Release —— 草稿 Release 不会自己建 tag，
+#     GitHub 会塞一个对 HACS 不可见的 untagged-<hash> 占位符。
+#   * **绝不传 --target**：tag 已存在时它买不到任何东西，却在 tag 传播未就绪的
+#     窗口内静默退回 untagged-<hash>（实测发生过，全程零报错）。
+#   * **--verify-tag**：tag 远程不可见时直接失败，而不是静默建出一个坏草稿。
+#   * 独立的绑定校验：**tag 存在 ≠ Release 绑定正确**，两者都要查。
+#   * 校验用 GET /releases（列表）而不是 /releases/tags/{tag}
+#     —— 后者对草稿返回 404，会把健康草稿误判成故障。
+#   * 列表接口是**最终一致性**的，必须重试。
+#   * 判据只能是 tag_name，**不能是 html_url** —— 健康草稿的 html_url
+#     在 Publish 之前也是 untagged- 占位符。
+#   * 找未绑定草稿要认 `untagged-` 前缀，不要用版本号前缀匹配
+#     （v1.2.4 会误匹配 v1.2.40）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "custom_components/huawei_home_storage/manifest.json"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "手动指定版本号（留空则读 manifest.json）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  COMPONENT: huawei_home_storage
+  MANIFEST: custom_components/huawei_home_storage/manifest.json
+
+jobs:
+  build-and-draft:
+    name: Build and draft release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 需要完整历史：要用 tag 做版本比较
+          fetch-depth: 0
+
+      # 注意：这里刻意**不用 heredoc**。YAML 的 run: | 块里不允许出现缩进层级低于
+      # 父级 key 的行，heredoc 内部顶格的 Python 代码会被当成新的 YAML key，
+      # 直接报 ScannerError。全部用单行 python3 -c。
+      - name: Version increment check
+        id: check
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            NEW_VERSION="${{ github.event.inputs.version }}"
+          else
+            NEW_VERSION=$(python3 -c "import json; print(json.load(open('${MANIFEST}'))['version'])")
+          fi
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then LATEST_TAG="v0.0.0"; fi
+          OLD_VERSION="${LATEST_TAG#v}"
+          echo "新版本: ${NEW_VERSION}（目标 tag: v${NEW_VERSION}）"
+          echo "旧版本: ${OLD_VERSION}（来自 tag: ${LATEST_TAG}）"
+          pip install -q packaging
+          IS_INCREASED=$(python3 -c "from packaging import version; print(version.parse('${NEW_VERSION}') > version.parse('${OLD_VERSION}'))")
+          if [ "${IS_INCREASED}" != "True" ]; then
+            echo "::error::新版本 ${NEW_VERSION} 并不大于 ${OLD_VERSION} —— 跳过发布（tag 必须严格递增）"
+            echo "compare_result=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo "compare_result=success"
+            echo "version=${NEW_VERSION}"
+            echo "commit_title=$(git log -1 --pretty=format:'%s')"
+          } >> "$GITHUB_OUTPUT"
+          if [[ "${NEW_VERSION}" =~ (beta|rc|alpha) ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create ZIP
+        if: steps.check.outputs.compare_result == 'success'
+        run: |
+          set -euo pipefail
+          cd "custom_components/${COMPONENT}"
+          zip -r "../../${COMPONENT}.zip" .
+
+      # ★ 必须在建 Release 之前把 tag 建好并推上去（见文件头说明）
+      - name: Create and push tag
+        if: steps.check.outputs.compare_result == 'success'
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.check.outputs.version }}"
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} 已存在，跳过创建"
+          else
+            git tag "${TAG}"
+            git push origin "${TAG}"
+            echo "已创建并推送 ${TAG}"
+          fi
+
+      - name: Create draft release
+        if: steps.check.outputs.compare_result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
+          COMMIT_TITLE: ${{ steps.check.outputs.commit_title }}
+          IS_PRERELEASE: ${{ steps.check.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          PRERELEASE_FLAG=""
+          if [ "${IS_PRERELEASE}" == "true" ]; then PRERELEASE_FLAG="--prerelease"; fi
+          # ★ 不要加 --target（会在 tag 传播窗口内静默绑成 untagged-<hash>）
+          # ★ --verify-tag 是必要防线：tag 远程不可见时直接失败
+          gh release create "${TAG}" \
+            --draft \
+            --verify-tag \
+            --title "${TAG} - ${COMMIT_TITLE}" \
+            --generate-notes \
+            ${PRERELEASE_FLAG} \
+            "${COMPONENT}.zip"
+          echo "草稿 Release ${TAG} 已创建"
+
+      # ── 校验 ①：tag 真的存在于远程 ────────────────────────────────────────
+      - name: Verify tag exists
+        if: steps.check.outputs.compare_result == 'success'
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.check.outputs.version }}"
+          if ! git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+            echo "::error::Tag ${TAG} 不存在 —— 该 Release 对 HACS 不可见"
+            exit 1
+          fi
+          echo "Tag ${TAG} 确认存在"
+
+      # ── 校验 ②：Release 确实绑在这个 tag 上 ───────────────────────────────
+      #   tag 存在 ≠ 绑定正确。这里查的是「Release 的 tag_name 是否等于目标 tag」。
+      - name: Verify release bound to tag
+        if: steps.check.outputs.compare_result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          REPO="${{ github.repository }}"
+          LIST="repos/${REPO}/releases?per_page=50"
+
+          # GET /releases 是最终一致性的（实测连续 3 次会丢 1 次），必须重试。
+          # 草稿不能用 /releases/tags/{tag} 查 —— 那个接口对草稿返回 404。
+          find_id() {
+            local jq_filter="$1" out=""
+            for _ in 1 2 3 4 5; do
+              out="$(gh api "${LIST}" --jq "${jq_filter}" 2>/dev/null || true)"
+              if [ -n "${out}" ] && [ "${out}" != "null" ]; then echo "${out}"; return 0; fi
+              sleep 3
+            done
+            echo ""
+          }
+
+          # 判据是 tag_name。刻意不看 html_url —— 健康草稿的 html_url
+          # 在 Publish 之前同样是 untagged- 占位符，拿它当判据会误判。
+          REL_ID="$(find_id "[.[] | select(.tag_name == \"${TAG}\")][0].id")"
+          if [ -n "${REL_ID}" ]; then
+            echo "Release 已正确绑定 ${TAG}（id=${REL_ID}）"
+            exit 0
+          fi
+
+          echo "::warning::找不到绑定 ${TAG} 的 Release —— 尝试修复"
+          # 认 untagged- 前缀，不用版本号前缀匹配（v1.2.4 会误匹配 v1.2.40）
+          REL_ID="$(find_id '[.[] | select(.tag_name | startswith("untagged-"))][0].id')"
+          if [ -z "${REL_ID}" ]; then
+            echo "::error::既没有绑定 ${TAG} 的 Release，也没有 untagged- 草稿 —— 无法修复"
+            exit 1
+          fi
+
+          gh api -X PATCH "repos/${REPO}/releases/${REL_ID}" -f tag_name="${TAG}" >/dev/null
+          sleep 3
+          REL_ID="$(find_id "[.[] | select(.tag_name == \"${TAG}\")][0].id")"
+          if [ -z "${REL_ID}" ]; then
+            echo "::error::修复失败 —— 仍找不到绑定 ${TAG} 的 Release"
+            exit 1
+          fi
+          echo "已修复并确认绑定 ${TAG}（id=${REL_ID}）"
+
+      - name: Summary
+        if: steps.check.outputs.compare_result == 'success'
+        run: |
+          {
+            echo "## 草稿 Release 已就绪"
+            echo ""
+            echo "- tag: \`v${{ steps.check.outputs.version }}\`"
+            echo "- 产物: \`${COMPONENT}.zip\`"
+            echo "- 草稿校验: tag 存在 ✅ · Release 绑定正确 ✅"
+            echo ""
+            echo "请到 Releases 页面确认内容后**手动 Publish** —— 发布前 HACS 用户看不到这个版本。"
+          } >> "$GITHUB_STEP_SUMMARY"
