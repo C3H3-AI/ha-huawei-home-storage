@@ -537,7 +537,7 @@
     },
     "search_files": {
       "name": "Search files",
-      "description": "Search the file space by keyword (device parameters not solved; currently fails, callers must tolerate).",
+      "description": "Search the file space by keyword (parameters found by exhaustive probing: query + limit/offset).",
       "fields": {
         "keyword": {
           "name": "Keyword",
@@ -546,6 +546,14 @@
         "category": {
           "name": "Space",
           "description": "user = My Files; public = Shared."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of results."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
         }
       }
     },

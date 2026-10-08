@@ -268,7 +268,11 @@ async def async_register_services(hass: HomeAssistant) -> None:
         return {"ok": True, "path": call.data["path"], "detail": data}
 
     async def _search_files(call: "ServiceCall") -> "ServiceResponse":
-        """按关键字搜索（``/filesvc/search``，参数未完全解出，容错返回）。"""
+        """按关键字搜索文件空间（``/filesvc/search``，**实测可用**）。
+
+        参数是穷举试出来的：关键字字段 ``query`` + 分页 ``limit``（不是 num）；
+        两者与 ``offset`` 一起才通过，多带 ``category`` 等反而会报错。
+        """
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
@@ -276,10 +280,15 @@ async def async_register_services(hass: HomeAssistant) -> None:
             data = await runtime.client.async_search_files(
                 call.data["keyword"],
                 category=call.data.get("category") or DEFAULT_CATEGORY,
+                limit=int(call.data.get("limit") or 20),
+                offset=int(call.data.get("offset") or 0),
             )
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
-        return {"ok": True, "keyword": call.data["keyword"], "result": data}
+        files = data.get("files") or []
+        return {"ok": True, "keyword": call.data["keyword"],
+                "count": data.get("count", len(files)), "items": files,
+                "result": data}
 
     async def _task_status(call: "ServiceCall") -> "ServiceResponse":
         """查传输任务中心（只读）：filesvc（文件空间）/ trans（跨服务传输）。
@@ -1009,6 +1018,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
             **entry_field,
             vol.Required("keyword"): str,
             vol.Optional("category"): CATEGORY,
+            vol.Optional("limit", default=20): vol.All(int, vol.Range(min=1, max=200)),
+            vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
         }),
         supports_response=SupportsResponse.ONLY,
     )

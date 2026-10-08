@@ -122,7 +122,7 @@ file_detail:
 
 search_files:
   name: 搜索文件
-  description: 按关键字搜索文件空间（设备参数未完全解出，可能返回空）
+  description: 按关键字搜索文件空间（参数由穷举实测得出：query + limit/offset）
   fields:
     entry_id:
       name: 配置条目 ID
@@ -138,6 +138,16 @@ search_files:
       selector:
         select:
           options: [user, public]
+    limit:
+      name: 条数
+      required: false
+      default: 20
+      selector: {number: {min: 1, max: 200}}
+    offset:
+      name: 偏移
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
 
 task_status:
   name: 查询传输任务
