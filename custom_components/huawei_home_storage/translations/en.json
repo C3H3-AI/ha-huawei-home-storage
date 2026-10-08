@@ -347,6 +347,302 @@
     }
   },
   "services": {
+    "create_folder": {
+      "name": "Create folder",
+      "description": "Create folder(s) in the file space (path for one, paths for many; duplicate names fail instead of being renamed).",
+      "fields": {
+        "path": {
+          "name": "Folder path",
+          "description": "Single folder, trailing slash required."
+        },
+        "paths": {
+          "name": "Folder paths (batch)",
+          "description": "The device batch endpoint is not solved; folders are created one by one."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "rename_path": {
+      "name": "Rename path",
+      "description": "Rename a file or folder (trailing slash for folders, none for files).",
+      "fields": {
+        "old_path": {
+          "name": "Old path",
+          "description": "Path to rename."
+        },
+        "new_path": {
+          "name": "New path",
+          "description": "New path in the same parent folder."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "file_id": {
+          "name": "Entry id",
+          "description": "Leave empty to resolve it by listing the parent folder."
+        }
+      }
+    },
+    "move_paths": {
+      "name": "Move files/folders",
+      "description": "Move files or folders into a destination folder (async task).",
+      "fields": {
+        "paths": {
+          "name": "Source paths",
+          "description": "Folders need a trailing slash."
+        },
+        "dest_dir": {
+          "name": "Destination folder",
+          "description": "Must already exist."
+        },
+        "category": {
+          "name": "Source space",
+          "description": "user = My Files; public = Shared."
+        },
+        "dest_category": {
+          "name": "Destination space",
+          "description": "Defaults to the source space."
+        }
+      }
+    },
+    "copy_paths": {
+      "name": "Copy files/folders",
+      "description": "Copy files or folders into a destination folder (async task; destination must exist).",
+      "fields": {
+        "paths": {
+          "name": "Source paths",
+          "description": "Folders need a trailing slash."
+        },
+        "dest_dir": {
+          "name": "Destination folder",
+          "description": "Must already exist."
+        },
+        "category": {
+          "name": "Source space",
+          "description": "user = My Files; public = Shared."
+        },
+        "dest_category": {
+          "name": "Destination space",
+          "description": "Defaults to the source space."
+        }
+      }
+    },
+    "delete_paths": {
+      "name": "Delete files/folders",
+      "description": "Delete files or folders from the file space — always moved to the recycle bin (recoverable).",
+      "fields": {
+        "paths": {
+          "name": "Paths",
+          "description": "Folders need a trailing slash."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "upload_file": {
+      "name": "Upload file",
+      "description": "Upload text or a file from the HA host into the device file space.",
+      "fields": {
+        "dest_path": {
+          "name": "Destination path",
+          "description": "e.g. /file/backup/note.txt."
+        },
+        "content": {
+          "name": "Text content",
+          "description": "Alternative to local_path."
+        },
+        "local_path": {
+          "name": "Local file path",
+          "description": "Path on the HA host (commonly readable under /config)."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "cancel_upload": {
+      "name": "Cancel upload",
+      "description": "Cancel an in-progress upload (needs the fileId from prepareUpload).",
+      "fields": {
+        "file_ids": {
+          "name": "fileId list",
+          "description": "Upload ids to cancel."
+        }
+      }
+    },
+    "copy_to_album": {
+      "name": "Copy to album",
+      "description": "Copy photos from the file space into an album (async task).",
+      "fields": {
+        "paths": {
+          "name": "Source file paths",
+          "description": "Photo paths in the file space."
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "album_name": {
+          "name": "Album name",
+          "description": "Optional, sent along with the request."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        },
+        "fids": {
+          "name": "Source fids",
+          "description": "One per path; resolved automatically when omitted."
+        },
+        "category": {
+          "name": "Source space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "query_files": {
+      "name": "Query files",
+      "description": "List recent/all/directory files (read-only)."
+    },
+    "file_detail": {
+      "name": "File detail",
+      "description": "Query file/folder details (device parameters not fully solved, may return empty).",
+      "fields": {
+        "path": {
+          "name": "Path",
+          "description": "e.g. /file/."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "photo_info": {
+      "name": "Photo metadata",
+      "description": "Resolve album photo fileIds into full metadata (including the hdcFilePath original).",
+      "fields": {
+        "file_ids": {
+          "name": "Photo fileId list",
+          "description": "Gallery-domain file ids."
+        }
+      }
+    },
+    "search_files": {
+      "name": "Search files",
+      "description": "Search the file space by keyword (device parameters not solved; currently fails, callers must tolerate).",
+      "fields": {
+        "keyword": {
+          "name": "Keyword",
+          "description": "Text to search for."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "list_recycle": {
+      "name": "List recycle bin",
+      "description": "List recycle bin entries (their rid is used by recover_recycle).",
+      "fields": {
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of entries."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
+        }
+      }
+    },
+    "recover_recycle": {
+      "name": "Recover from recycle bin",
+      "description": "Restore an entry from the recycle bin (pass rid, or paths/names to match automatically).",
+      "fields": {
+        "rid": {
+          "name": "Recycle bin rid",
+          "description": "From list_recycle."
+        },
+        "name": {
+          "name": "Entry name",
+          "description": "Used together with rid."
+        },
+        "paths": {
+          "name": "Paths",
+          "description": "Match rid by path."
+        },
+        "names": {
+          "name": "Names",
+          "description": "Match rid by name."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "item_type": {
+          "name": "Entry type",
+          "description": "4 = folder, 0 = file."
+        }
+      }
+    },
+    "delete_media": {
+      "name": "Move media to trash",
+      "description": "Move photos/videos to the recycle bin (recoverable)."
+    },
+    "recover_media": {
+      "name": "Recover media",
+      "description": "Restore photos/videos from the recycle bin."
+    },
+    "task_status": {
+      "name": "Query transfer tasks",
+      "description": "Query the task center: filesvc = file-space tasks, trans = cross-service transfers.",
+      "fields": {
+        "service": {
+          "name": "Task source",
+          "description": "filesvc or trans."
+        },
+        "task_types": {
+          "name": "Task types",
+          "description": "Defaults: filesvc→400; trans→201/300."
+        },
+        "task_category": {
+          "name": "Task category",
+          "description": "Device-side task category, default 2."
+        },
+        "all_tasks": {
+          "name": "All trans tasks",
+          "description": "Uses /trans/getAllTask (no type filter)."
+        }
+      }
+    },
+    "duplicate_scan": {
+      "name": "Duplicate photo scan",
+      "description": "Start or stop duplicate photo scan (never deletes photos)."
+    },
+    "reboot_device": {
+      "name": "Reboot storage device",
+      "description": "⚠️ Interrupts storage service for 1-2 minutes (recoverable); the integration never reboots automatically."
+    },
+    "disk_sleep": {
+      "name": "Disk sleep",
+      "description": "Put device disks to sleep (recoverable; wake-up follows device policy)."
+    },
+    "usb_plug_out": {
+      "name": "Eject USB device",
+      "description": "⚠️ Eject USB storage from the device (recoverable, but in-flight file I/O is interrupted)."
+    },
     "refresh_credentials": {
       "name": "Refresh device credentials",
       "description": "Request a new device session from Huawei Cloud (use when the device returns 401 or credentials expire).",
@@ -356,22 +652,6 @@
           "description": "Leave empty to target the first configured device."
         }
       }
-    },
-    "duplicate_scan": {
-      "name": "Duplicate photo scan",
-      "description": "Start or stop duplicate photo scan (never deletes photos)."
-    },
-    "query_files": {
-      "name": "Query files",
-      "description": "List recent/all/directory files (read-only)."
-    },
-    "delete_media": {
-      "name": "Move media to trash",
-      "description": "Move photos/videos to the recycle bin (recoverable)."
-    },
-    "recover_media": {
-      "name": "Recover media",
-      "description": "Restore photos/videos from the recycle bin."
     }
   },
   "common": {
