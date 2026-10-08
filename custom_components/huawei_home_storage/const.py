@@ -91,7 +91,9 @@ DEVICE_CLIENT_TYPE = 3
 
 API_HEARTBEAT = "/access/heartBeat"
 API_ALBUM_LIST = "/gallery/getAlbumList"
-API_ALBUM_INC = "/gallery/albumIncInfo"          # 增量表；集成未使用（见 API 清单）
+API_ALBUM_INC = "/gallery/albumIncInfo"          # 相册增量表（GET，抓包实据 2026-10-09）
+API_ALBUM_MEMBERS = "/gallery/albumMembIncInfo"  # 成员增量表（GET，抓包实据 2026-10-09）
+API_ALBUM_CFG = "/gallery/albumCfg"              # 相册元数据+封面原图（GET，抓包实据 2026-10-09）
 API_PHOTOS_INC = "/gallery/getIncPhotosInfoTable"
 API_QUERY_BIN = "/gallery/queryBin"
 API_FILES = "/filesvc/files"

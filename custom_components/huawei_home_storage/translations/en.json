@@ -706,6 +706,64 @@
           "description": "user = My Files; public = Shared."
         }
       }
+    },
+    "album_info": {
+      "name": "Album detail",
+      "description": "Metadata and cover image paths for one album (fallback when the album list has no cover).",
+      "fields": {
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        }
+      }
+    },
+    "album_changes": {
+      "name": "Album changes",
+      "description": "Album increment table: which albums changed (read-only).",
+      "fields": {
+        "pre_id": {
+          "name": "Cursor",
+          "description": "Start of the increment page."
+        },
+        "num": {
+          "name": "Limit",
+          "description": "Maximum entries to return."
+        }
+      }
+    },
+    "share_to_person": {
+      "name": "Share to person",
+      "description": "Share photos to a person album (ownerId is a device user id).",
+      "fields": {
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "owner_id": {
+          "name": "Person ownerId",
+          "description": "Device user id."
+        },
+        "file_ids": {
+          "name": "Photo fileIds",
+          "description": "Gallery-domain photo ids."
+        },
+        "album_name": {
+          "name": "Album name",
+          "description": "Optional, sent with the request."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        },
+        "file_names": {
+          "name": "File names",
+          "description": "One per file_id; may be omitted."
+        }
+      }
     }
   },
   "common": {

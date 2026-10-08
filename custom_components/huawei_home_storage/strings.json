@@ -706,6 +706,64 @@
           "description": "user = 我的文件；public = 共享。"
         }
       }
+    },
+    "album_info": {
+      "name": "相册详情",
+      "description": "单个相册的元数据与封面原图路径（相册列表里封面为空时的兜底）。",
+      "fields": {
+        "album_id": {
+          "name": "相册 ID",
+          "description": "目标相册 id。"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": "用户/共享相册为 6。"
+        }
+      }
+    },
+    "album_changes": {
+      "name": "相册变动",
+      "description": "相册增量表：哪些相册有变动（只读）。",
+      "fields": {
+        "pre_id": {
+          "name": "起始游标",
+          "description": "增量表分页起点。"
+        },
+        "num": {
+          "name": "条数",
+          "description": "最多返回多少条。"
+        }
+      }
+    },
+    "share_to_person": {
+      "name": "共享到人物",
+      "description": "把照片共享到人物相册（ownerId 用设备用户 id）。",
+      "fields": {
+        "album_id": {
+          "name": "相册 ID",
+          "description": "目标相册 id。"
+        },
+        "owner_id": {
+          "name": "人物 ownerId",
+          "description": "设备用户 id。"
+        },
+        "file_ids": {
+          "name": "照片 fileId 列表",
+          "description": "相册域的照片 id。"
+        },
+        "album_name": {
+          "name": "相册名称",
+          "description": "可选，随请求带上。"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": "用户/共享相册为 6。"
+        },
+        "file_names": {
+          "name": "文件名列表",
+          "description": "与 file_ids 一一对应，可留空。"
+        }
+      }
     }
   },
   "common": {
