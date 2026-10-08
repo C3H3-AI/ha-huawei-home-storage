@@ -54,6 +54,44 @@ def _mask(value: str) -> str:
     return value if len(value) <= 7 else f"{value[:3]}****{value[-4:]}"
 
 
+async def build_account_entry(
+    hass: Any, entry: Any, account: str, password: str, session: Any
+) -> dict[str, Any] | None:
+    """登录成功后构造一条账号记录（配置流与面板登录共用）。
+
+    抽成独立函数是为了让【HA 配置流添加账号】与【面板内登录】走**同一段**逻辑，
+    避免两边行为漂移（曾出现配置流可用、另一处静默失败的情况）。
+    """
+    from .api import HuaweiCloudClient
+    from .api.huawei_account import access_token_of, session_to_dict
+
+    device_id = entry.data.get("device_id", "")
+    uid = str(getattr(session, "user_id", "") or "")
+    dev_mac = derive_dev_mac(f"{device_id}|{account}")
+    try:
+        # ⚠️ 必须给真实 session（async_fetch_device_credentials 内部要 post），
+        # 否则抛 'NoneType' has no attribute 'post'（2026-10-06 实测）。
+        session_http = async_get_clientsession(hass, verify_ssl=False)
+        client = HuaweiCloudClient(session_http, access_token=access_token_of(session))
+        creds = await client.async_fetch_device_credentials(
+            device_id, uid, dev_mac, entry.data.get("product") or "home-assistant"
+        )
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("新增账号获取设备凭据失败: %s: %s", type(err).__name__, err)
+        return None
+
+    return {
+        "key": account,
+        "account": account,
+        "password": password,
+        "smart_session": session_to_dict(session),
+        "dev_mac": dev_mac,
+        "uid": uid,
+        "user": creds.user,
+    }
+
+
+
 def _accounts_label(accounts: list[dict[str, Any]]) -> str:
     """账号列表的可读摘要（界面占位符 ``{accounts}``）。"""
     return "、".join(_mask(a.get("account", "")) for a in accounts) or "（无）"

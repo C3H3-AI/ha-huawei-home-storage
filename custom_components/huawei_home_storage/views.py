@@ -25,6 +25,8 @@ from .const import (
     DOMAIN,
 )
 
+from .transfer import ensure_dir, upload_stream
+
 _LOGGER = logging.getLogger(__name__)
 
 URL = "/api/huawei_home_storage/image/{entry_id}/{name}/{path:.*}"
@@ -100,11 +102,17 @@ async def _serve_image(
     clients = getattr(runtime, "clients", None) or {}
     client = clients.get(account) or runtime.client
     device_path = "/" + path.lstrip("/")
-    # 取图的 category 由**路径**决定（实测 2026-10-08）：
-    #   /picture/...                相册域     → category=""
-    #   /file/.File_Syssvc/thumb/…  共享空间   → category="public"（否则 403/404）
-    category = "public" if device_path.startswith("/file/") else ""
-    image = await client.async_fetch_image(device_path, category=category)
+    # 取图的 category 不能按路径硬编码。实测 2026-10-08：
+    #   * 文件空间缩略图 `/file/.File_Syssvc/thumb/…`
+    #     → category="" 能取到（20976B），category="public" 反而取不到
+    #   * 相册域 `/picture/…` → category="" 即可
+    # 此前按路径前缀一律传 "public"，导致文件空间缩略图 404。
+    # 改为**按序尝试、取到即用**，不猜单一答案。
+    image = None
+    for category in ("", "public"):
+        image = await client.async_fetch_image(device_path, category=category)
+        if image:
+            break
     if not image:
         raise web.HTTPNotFound()
     return web.Response(
@@ -112,6 +120,19 @@ async def _serve_image(
         content_type=_content_type(path),
         headers={"Cache-Control": f"public, max-age={CACHE_SECONDS}"},
     )
+
+
+def mask_account(value: str) -> str:
+    """账号脱敏：手机号保留前 3 后 4；邮箱保留首字符与域名。"""
+    text = str(value or "")
+    if not text:
+        return "账号"
+    if "@" in text:
+        name, _, domain = text.partition("@")
+        return (name[:1] + "***@" + domain) if domain else name[:1] + "***"
+    if len(text) > 7:
+        return text[:3] + "****" + text[-4:]
+    return text[:1] + "***"
 
 
 def _info(runtime: Any) -> dict[str, Any]:
@@ -315,6 +336,10 @@ class HuaweiStorageStatusView(HomeAssistantView):
                             "key": a.get("key"),
                             "account": a.get("account") or "",
                             "user": a.get("user") or "",
+                            "uid": a.get("uid") or "",
+                            # 面板用：脱敏显示名 + 是否默认账号
+                            "label": mask_account(a.get("account") or a.get("user") or "账号"),
+                            "is_primary": idx == 0,
                             "tunnel": (
                                 runtime.clients.get(str(a.get("key")))
                                 .credentials.https_url
@@ -324,7 +349,7 @@ class HuaweiStorageStatusView(HomeAssistantView):
                             ),
                             "counts": runtime.counts_of_account(str(a.get("key"))),
                         }
-                        for a in accounts
+                        for idx, a in enumerate(accounts)
                     ],
                     # 以下用于面板展示（MAC 不放进设备注册，避免与路由器等集成冲突）
                     "device_mac": cfg.get(CONF_DEVICE_MAC) or "",
@@ -347,10 +372,13 @@ class HuaweiStorageStatusView(HomeAssistantView):
 
 
 class HuaweiStorageFilesView(HomeAssistantView):
-    """文件空间目录浏览（供面板照片/文件页使用）。
+    """文件空间目录浏览（供面板「文件」页使用）。
 
-    GET /api/huawei_home_storage/files/<entry_id>?path=/file/xxx/
-    返回 {files: [...], count: N}，文件条目含 thumb（缩略图路径）。
+    GET /api/huawei_home_storage/files/<entry_id>?path=/file/xxx/&space=user|public
+
+    ``space`` 区分两个**互相独立**的空间（实测 2026-10-08）：
+    ``user`` = 「我的文件」，``public`` = 「共享」——同一路径在两个空间下
+    内容不同，共享空间的目录只在 ``public`` 可见。
     """
 
     url = "/api/huawei_home_storage/files/{entry_id}"
@@ -358,34 +386,372 @@ class HuaweiStorageFilesView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request, entry_id: str) -> web.Response:
-        hass = request.app["hass"]
-        runtime = hass.data.get(DOMAIN, {}).get(entry_id)
-        if runtime is None:
-            raise web.HTTPNotFound()
+        runtime = _runtime_of(request, entry_id)
         path = request.query.get("path") or "/file/"
+        space = request.query.get("space") or "user"
+        account = request.query.get("account") or ""
+        client = _client_of(runtime, account)
+        category = "public" if space == "public" else "user"
         try:
-            result = await runtime.client.async_list_files(path)
+            result = await client.async_list_files(
+                path,
+                offset=int(request.query.get("offset") or 0),
+                limit=int(request.query.get("limit") or 200),
+                category=category,
+            )
         except Exception as err:  # noqa: BLE001
             return web.json_response({"error": str(err)}, status=502)
         files = []
         for f in result.get("files") or []:
-            # 只保留浏览需要的字段；thumb 走图片代理
-            entry = {
+            item = {
                 "name": f.get("name"),
-                "type": f.get("type"),          # 2/4/6=目录, 8=文件
+                "type": f.get("type"),  # 2/4/6=目录, 8=文件
                 "mime": f.get("mime"),
                 "size": f.get("size"),
                 "mtime": f.get("mtime"),
                 "thumb": f.get("thumb") or "",
             }
             if f.get("thumb"):
-                entry["thumbUrl"] = (
-                    f"/api/huawei_home_storage/image/{entry_id}/thumb/"
-                    + (f["thumb"] or "").lstrip("/")
+                item["thumbUrl"] = build_image_url(
+                    entry_id, f["thumb"], name="thumb", account=account
                 )
-            files.append(entry)
-        return web.json_response({"path": path, "count": len(files), "files": files})
+            files.append(item)
+        return web.json_response(
+            {"path": path, "space": space, "count": len(files), "files": files}
+        )
 
+
+# 相册按业务含义分组（面板「相册」页按组展示）
+_ALBUM_GROUPS: tuple[tuple[str, str, tuple[int, ...]], ...] = (
+    ("smart", "智能分类", (1, 2)),
+    ("face", "人物", (23,)),
+    ("place", "地点", (22,)),
+    ("scene", "场景", (24,)),
+    ("user", "我的相册", (6,)),
+)
+
+
+def _runtime_of(request: web.Request, entry_id: str) -> Any:
+    runtime = request.app["hass"].data.get(DOMAIN, {}).get(entry_id)
+    if runtime is None:
+        raise web.HTTPNotFound()
+    return runtime
+
+
+def _primary_key(runtime: Any) -> str:
+    """主账号 key（未指定账号时的默认视角）。"""
+    from .entity import _account_key  # noqa: PLC0415
+
+    accounts = getattr(runtime, "accounts", None) or []
+    return _account_key(accounts[0]) if accounts else ""
+
+
+def _client_of(runtime: Any, account: str) -> Any:
+    """取账号对应的设备客户端。
+
+    设备按 client 会话分配独立隧道端口，跨账号取数会拿到别人的数据或 401，
+    因此必须用**所选账号**的客户端。
+    """
+    clients = getattr(runtime, "clients", None) or {}
+    if account and account in clients:
+        return clients[account]
+    primary = _primary_key(runtime)
+    if primary and primary in clients:
+        return clients[primary]
+    return runtime.client
+
+
+def _device_id_of(runtime: Any) -> str:
+    """取 ``deviceId``（``getAlbumInfo`` 必需）。
+
+    ⚠️ 用配置条目的 ``device_id``，**不是** ``cloud_dev_id``（设备 SN）——
+    两者不可互换，用错会 1101/30104（实测）。
+    """
+    entry = getattr(runtime, "entry", None)
+    data = getattr(entry, "data", None) or {}
+    return str(data.get("device_id") or "")
+
+
+def _album_thumb(album: dict[str, Any]) -> str:
+    """相册封面缩略图路径（``coverInfo`` 里可能有 None 元素）。"""
+    for item in album.get("coverInfo") or []:
+        if isinstance(item, dict):
+            path = item.get("thumbFilePath") or item.get("lcdFilePath")
+            if path:
+                return str(path)
+    return ""
+
+
+class HuaweiStorageAlbumsView(HomeAssistantView):
+    """相册列表（真实相册，含封面缩略图）。
+
+    GET /api/huawei_home_storage/albums/<entry_id>?account=<key>
+    返回按业务分组的相册：智能分类 / 人物 / 地点 / 场景 / 我的相册。
+    每个相册带 albumType / albumId / num / thumbUrl，供面板网格直接渲染。
+    """
+
+    url = "/api/huawei_home_storage/albums/{entry_id}"
+    name = "api:huawei_home_storage:albums"
+    requires_auth = True
+
+    async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        runtime = _runtime_of(request, entry_id)
+        account = request.query.get("account") or ""
+        key = account or _primary_key(runtime)
+
+        groups = []
+        total = 0
+        for group_key, title, types in _ALBUM_GROUPS:
+            albums: list[dict[str, Any]] = []
+            seen: set[tuple[int, int]] = set()
+            for album_type in types:
+                raw = (
+                    runtime.albums_of_account(key, album_type)
+                    if key
+                    else runtime.albums_of(album_type)
+                )
+                for a in raw or []:
+                    album_id = int(a.get("albumId") or 0)
+                    a_type = int(a.get("albumType") or album_type)
+                    if (a_type, album_id) in seen:
+                        continue
+                    seen.add((a_type, album_id))
+                    thumb = _album_thumb(a)
+                    albums.append(
+                        {
+                            "type": a_type,
+                            "id": album_id,
+                            "name": a.get("albumName") or "未命名相册",
+                            "count": int(a.get("num") or 0),
+                            "thumbUrl": (
+                                build_image_url(entry_id, thumb, name="thumb", account=account)
+                                if thumb
+                                else ""
+                            ),
+                        }
+                    )
+            # 「我的相册」若缓存里没有，直接补取 albumType=6（失败只降级）
+            if group_key == "user" and not albums:
+                try:
+                    res = await _client_of(runtime, account)._request(
+                        "/gallery/getAlbumList", {"albumType": 6}
+                    )
+                    for a in res.get("albumlist") or []:
+                        thumb = _album_thumb(a)
+                        albums.append(
+                            {
+                                "type": int(a.get("albumType") or 6),
+                                "id": int(a.get("albumId") or 0),
+                                "name": a.get("albumName") or "未命名相册",
+                                "count": int(a.get("num") or 0),
+                                "thumbUrl": (
+                                    build_image_url(
+                                        entry_id, thumb, name="thumb", account=account
+                                    )
+                                    if thumb
+                                    else ""
+                                ),
+                            }
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
+            if albums:
+                albums.sort(key=lambda x: -x["count"])
+                total += len(albums)
+                groups.append({"key": group_key, "title": title, "albums": albums})
+
+        # 「所有照片」这类系统相册没有 coverInfo，卡片会空着。
+        # 用相册内首张照片的缩略图补封面（只对缺封面的相册做，代价可控）。
+        client = _client_of(runtime, account)
+        for group in groups:
+            for album in group["albums"]:
+                if album["thumbUrl"] or not album["count"]:
+                    continue
+                try:
+                    res = await client.async_get_album_photos(
+                        album["id"],
+                        album["type"],
+                        device_id=_device_id_of(runtime),
+                        num=1,
+                    )
+                    first = (res.get("photos") or [{}])[0]
+                    thumb = first.get("thumbFilePath") or ""
+                    if thumb:
+                        album["thumbUrl"] = build_image_url(
+                            entry_id, thumb, name="thumb", account=account
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
+
+        return web.json_response({"account": key, "total": total, "groups": groups})
+
+
+class HuaweiStorageAlbumPhotosView(HomeAssistantView):
+    """相册内照片（分页）。
+
+    GET /api/huawei_home_storage/album/<entry_id>/<album_type>/<album_id>
+        ?account=<key>&last_cre_time=&last_row_id=&num=
+
+    上游实测：`getAlbumInfo` 八个参数缺一即 30104；返回的照片带
+    ``thumbFilePath``（可取）与 ``hdcFilePath``/``lcdFilePath``（原图）。
+    """
+
+    url = "/api/huawei_home_storage/album/{entry_id}/{album_type}/{album_id}"
+    name = "api:huawei_home_storage:album_photos"
+    requires_auth = True
+
+    async def get(
+        self,
+        request: web.Request,
+        entry_id: str,
+        album_type: str,
+        album_id: str,
+    ) -> web.Response:
+        runtime = _runtime_of(request, entry_id)
+        account = request.query.get("account") or ""
+        client = _client_of(runtime, account)
+        try:
+            res = await client.async_get_album_photos(
+                int(album_id),
+                int(album_type),
+                device_id=_device_id_of(runtime),
+                last_cre_time=int(request.query.get("last_cre_time") or 0),
+                last_row_id=int(request.query.get("last_row_id") or 0),
+                num=int(request.query.get("num") or 100),
+            )
+        except Exception as err:  # noqa: BLE001
+            return web.json_response({"error": str(err)}, status=502)
+
+        photos = []
+        for p in res.get("photos") or []:
+            name = str(p.get("fileName") or p.get("name") or p.get("fileId") or "")
+            thumb = p.get("thumbFilePath") or ""
+            if not thumb:
+                for a in p.get("assets") or []:
+                    if "thumb" in str(a.get("name", "")):
+                        thumb = a.get("path") or ""
+                        break
+            # 原图（hdc）多为 HEIC/大图 —— 浏览器**渲染不了 HEIC**，
+            # 因此浏览用 lcd（通常是 JPEG），下载才给 hdc。
+            hdc = p.get("hdcFilePath") or ""
+            lcd = p.get("lcdFilePath") or ""
+            item = {
+                "id": p.get("fileId"),
+                "name": name,
+                "size": p.get("fileSize") or p.get("size"),
+                "mtime": p.get("mtime") or p.get("createTime"),
+            }
+            if thumb:
+                item["thumbUrl"] = build_image_url(
+                    entry_id, thumb, name="thumb", account=account
+                )
+            if lcd or hdc:
+                item["viewUrl"] = build_image_url(
+                    entry_id, lcd or hdc, name="raw", account=account
+                )
+            if hdc or lcd:
+                item["downloadUrl"] = build_image_url(
+                    entry_id, hdc or lcd, name="raw", account=account
+                )
+                item["downloadName"] = name
+            photos.append(item)
+
+        return web.json_response(
+            {
+                "count": len(photos),
+                "photos": photos,
+                "next": {
+                    "last_cre_time": int(res.get("lastCreTime") or 0),
+                    "last_row_id": int(res.get("lastRowId") or 0),
+                },
+            }
+        )
+
+
+class HuaweiStorageRecycleView(HomeAssistantView):
+    """最近删除（回收站）。
+
+    GET /api/huawei_home_storage/recycle/<entry_id>?space=user|public
+    条目含 rid（恢复用）/ name / dtime / 类型。
+    """
+
+    url = "/api/huawei_home_storage/recycle/{entry_id}"
+    name = "api:huawei_home_storage:recycle"
+    requires_auth = True
+
+    async def get(self, request: web.Request, entry_id: str) -> web.Response:
+        runtime = _runtime_of(request, entry_id)
+        account = request.query.get("account") or ""
+        client = _client_of(runtime, account)
+        try:
+            items = await client.async_list_recycle(
+                category=request.query.get("space") or "public",
+                limit=int(request.query.get("limit") or 100),
+                offset=int(request.query.get("offset") or 0),
+            )
+        except Exception as err:  # noqa: BLE001
+            return web.json_response({"error": str(err)}, status=502)
+        out = []
+        for it in items or []:
+            out.append(
+                {
+                    "rid": str(it.get("rid") or it.get("id") or ""),
+                    "name": it.get("name") or it.get("fileName") or "",
+                    "path": it.get("path") or "",
+                    "mtime": it.get("dtime") or it.get("deleteTime") or 0,
+                    "type": it.get("type"),
+                }
+            )
+        return web.json_response({"count": len(out), "items": out})
+
+
+class HuaweiStorageUploadView(HomeAssistantView):
+    """浏览器上传（面板用）。
+
+    ``POST /api/huawei_home_storage/upload/<entry_id>?path=/file/x.bin&space=user``
+    body = 文件原始字节，``Content-Length`` 必需（设备侧 prepareUpload 要声明大小）。
+
+    为什么单开一个视图：集成的 ``upload_file`` **服务**只支持文本
+    （``content``）或 HA 主机上的路径（``local_path``），都承载不了
+    「用户在浏览器里选的文件」。本视图边收边转发，内存占用只有一个分块。
+    """
+
+    url = "/api/huawei_home_storage/upload/{entry_id}"
+    name = "api:huawei_home_storage:upload"
+    requires_auth = True
+
+    async def post(self, request: web.Request, entry_id: str) -> web.Response:
+        runtime = _runtime_of(request, entry_id)
+        dest = (request.query.get("path") or "").strip()
+        if not dest:
+            return web.json_response({"error": "缺少 path"}, status=400)
+        total = request.content_length
+        if not total:
+            return web.json_response(
+                {"error": "缺少 Content-Length，无法向设备声明文件大小"}, status=411
+            )
+        space = request.query.get("space") or "user"
+        category = "public" if space == "public" else "user"
+        client = _client_of(runtime, request.query.get("account") or "")
+
+        # 目标目录必须已存在，否则设备会直接断开连接（实测）
+        parent = dest.rstrip("/").rsplit("/", 1)[0] + "/"
+        if not await ensure_dir(client, parent, category):
+            return web.json_response(
+                {"error": f"目标目录不可用：{parent}"}, status=502
+            )
+        try:
+            res = await upload_stream(
+                client,
+                dest,
+                total,
+                request.content.iter_chunked(1024 * 1024),
+                device_id=_device_id_of(runtime),
+                category=category,
+            )
+        except Exception as err:  # noqa: BLE001
+            return web.json_response({"error": str(err)[:200]}, status=502)
+        return web.json_response({"ok": True, "path": dest, "size": total, "device": res})
 
 
 def async_register_views(hass: HomeAssistant) -> None:
@@ -395,6 +761,10 @@ def async_register_views(hass: HomeAssistant) -> None:
     hass.http.register_view(HuaweiStorageAccountImageView())
     hass.http.register_view(HuaweiStorageStatusView())
     hass.http.register_view(HuaweiStorageFilesView())
+    hass.http.register_view(HuaweiStorageAlbumsView())
+    hass.http.register_view(HuaweiStorageAlbumPhotosView())
+    hass.http.register_view(HuaweiStorageRecycleView())
+    hass.http.register_view(HuaweiStorageUploadView())
     hass.data[VIEWS_FLAG] = True
 
 
