@@ -435,11 +435,36 @@ async function loadOneImage({ img, url }) {
     const h = hassOf();
     const r = await h.fetchWithAuth(url);
     if (!r.ok) throw new Error("HTTP " + r.status);
-    img.src = URL.createObjectURL(await r.blob());
+    const blobUrl = URL.createObjectURL(await r.blob());
+    // ⚠️ 缩略图数量可达数千（633 个相册封面 / 无限加载的照片），
+    // 每个 blob 不释放会一直占内存。图被移除/替换时释放它。
+    img.dataset.blobUrl = blobUrl;
+    img.addEventListener("load", function onLoad() {
+      // 图已解码进 <img>，blob URL 不再需要（保留 src 显示的副本）
+      // 注意：不能立刻 revoke，否则已解码图像仍显示但无法再引用；
+      // 改为在 img 从 DOM 移除时统一释放（见 releaseImageBlob）。
+      img.removeEventListener("load", onLoad);
+    });
+    img.src = blobUrl;
     img.style.opacity = "1";
   } catch (e) {
     img.style.opacity = ".25";
   }
+}
+
+/** 释放一个 <img> 持有的 blob URL（在从 DOM 移除前调用）。 */
+function releaseImageBlob(img) {
+  const u = img && img.dataset && img.dataset.blobUrl;
+  if (u) {
+    try { URL.revokeObjectURL(u); } catch (e) { /* 已释放 */ }
+    delete img.dataset.blobUrl;
+  }
+}
+
+/** 重绘前清空区域：释放该区域所有缩略图 blob，避免切换视图后残留。 */
+function releaseImagesIn(root) {
+  if (!root) return;
+  root.querySelectorAll("img[data-blob-url]").forEach(releaseImageBlob);
 }
 
 function queueImages(root) {
@@ -671,6 +696,7 @@ async function loadFiles() {
     if (PH.space === "recycle") {
       const q = SEL.account ? `?account=${encodeURIComponent(SEL.account)}` : "";
       const res = await apiGet(`/api/huawei_home_storage/recycle/${encodeURIComponent(eid)}${q}`);
+      releaseImagesIn(box);
       box.innerHTML = renderRecycle(res);
       if (panel) panel._wire(box);
       return;
@@ -679,6 +705,7 @@ async function loadFiles() {
     if (SEL.account) q.set("account", SEL.account);
     const res = await apiGet(`/api/huawei_home_storage/files/${encodeURIComponent(eid)}?${q}`);
     PH.data = res;
+    releaseImagesIn(box);          // ← 先释放旧缩略图的 blob
     box.innerHTML = renderFileList(res);
     if (panel) panel._wire(box);
     queueImages(box);
@@ -1131,12 +1158,17 @@ function openViewer(list, index) {
   }
 
   v.addEventListener("click", (e) => {
-    if (e.target === v || e.target.closest("[data-close]")) { v.remove(); return; }
+    if (e.target === v || e.target.closest("[data-close]")) {
+      // ⚠️ 关闭时必须释放当前这张的 blob（切图只释放上一张，最后一张会漏）
+      releaseImageBlob(img);
+      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+      v.remove(); return;
+    }
     if (e.target.closest("[data-prev]")) { i = (i - 1 + list.length) % list.length; show(); return; }
     if (e.target.closest("[data-next]")) { i = (i + 1) % list.length; show(); return; }
   });
   v.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") v.remove();
+    if (e.key === "Escape") { releaseImageBlob(img); if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; } v.remove(); }
     else if (e.key === "ArrowLeft") { i = (i - 1 + list.length) % list.length; show(); }
     else if (e.key === "ArrowRight") { i = (i + 1) % list.length; show(); }
   });
@@ -1450,6 +1482,7 @@ class HuaweiStoragePanel extends HTMLElement {
     this._paintTop(d);
 
     const v = VIEWS[this._view] || VIEWS.overview;
+    releaseImagesIn(this._main());   // ← 重绘前释放上一屏的缩略图 blob
     this._main().innerHTML =
       (this._error ? `<div class="err">加载失败：${esc(this._error)}</div>` : "")
       + v.render(d);

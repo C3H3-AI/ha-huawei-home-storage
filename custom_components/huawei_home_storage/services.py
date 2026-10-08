@@ -330,6 +330,36 @@ async def async_register_services(hass: HomeAssistant) -> None:
     # ------------------------------------------------------------------
     # 文件空间写入
     # ------------------------------------------------------------------
+    def _safe_device_path(raw: object) -> tuple[str, str | None]:
+        """校验设备内路径，返回 (规范化路径, 错误信息)。
+
+        服务的路径来自自动化/脚本输入，这里挡掉两类问题：
+          * 越界：含 ``..`` 段（如 ``/file/../../etc``）
+          * 越界：不是 ``/file/`` 起头（设备只认这个文件空间根）
+        """
+        text = str(raw or "").strip()
+        if not text:
+            return "", "路径不能为空"
+        if ".." in text.split("/"):
+            return "", f"路径不允许包含 '..'：{text}"
+        if not text.startswith("/file/"):
+            return "", f"路径必须以 /file/ 开头：{text}"
+        norm = "/" + "/".join(x for x in text.split("/") if x)
+        if text.endswith("/"):
+            norm += "/"
+        return norm, None
+
+    def _allowed_upload_dir(hass: Any) -> str:
+        """``upload_file`` 的 ``local_path`` 允许读取的根目录。
+
+        ⚠️ 安全：``local_path`` 由调用者给，不限制就能读容器内**任意文件** ——
+        包括 ``secrets.yaml``、``.storage``（含令牌与凭据），等于把读文件的
+        口子开给任何一条自动化。这里限定在 HA 配置目录下的 ``uploads`` 子目录。
+        """
+        import os as _os  # noqa: PLC0415
+
+        return _os.path.realpath(hass.config.path("uploads"))
+
     async def _create_folder(call: "ServiceCall") -> "ServiceResponse":
         """新建目录（``/filesvc/mkdir``）—— 支持一次给多个路径（逐个建，部分失败也如实回报）。
 
@@ -349,14 +379,18 @@ async def async_register_services(hass: HomeAssistant) -> None:
         created: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         for raw in paths:
+            norm, bad = _safe_device_path(raw)
+            if bad:
+                failed.append({"path": str(raw), "error": bad})
+                continue
             try:
-                data = await runtime.client.async_mkdir(raw, category=category)
+                data = await runtime.client.async_mkdir(norm, category=category)
             except Exception as exc:  # noqa: BLE001
-                _LOGGER.error("新建目录失败(%s): %s", raw, exc)
-                failed.append({"path": raw, "error": str(exc)})
+                _LOGGER.error("新建目录失败(%s): %s", norm, exc)
+                failed.append({"path": norm, "error": str(exc)})
                 continue
             created.append({
-                "path": raw if raw.endswith("/") else raw + "/",
+                "path": norm,
                 "fid": (data or {}).get("fid"),
             })
         await runtime.fast.async_request_refresh()
@@ -370,8 +404,12 @@ async def async_register_services(hass: HomeAssistant) -> None:
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
-        old_path = call.data["old_path"]
-        new_path = call.data["new_path"]
+        old_path, bad1 = _safe_device_path(call.data["old_path"])
+        new_path, bad2 = _safe_device_path(call.data["new_path"])
+        if bad1:
+            return {"ok": False, "error": bad1}
+        if bad2:
+            return {"ok": False, "error": bad2}
         category = call.data.get("category") or DEFAULT_CATEGORY
         try:
             result = await runtime.client.async_rename(
@@ -483,14 +521,25 @@ async def async_register_services(hass: HomeAssistant) -> None:
 
         payload: bytes
         if local_path:
+            # ⚠️ 安全：限定可读目录，避免读到 secrets.yaml / .storage 里的令牌
+            import os as _os  # noqa: PLC0415
+
+            root = _allowed_upload_dir(hass)
+            real = _os.path.realpath(local_path)
+            if not (real == root or real.startswith(root + _os.sep)):
+                return {
+                    "ok": False,
+                    "error": f"local_path 只允许读取 {root} 下的文件（防止读到敏感配置）",
+                }
+
             def _read() -> bytes:
-                with open(local_path, "rb") as fh:
+                with open(real, "rb") as fh:
                     return fh.read(MAX_UPLOAD_BYTES + 1)
 
             try:
                 payload = await hass.async_add_executor_job(_read)
             except Exception as exc:  # noqa: BLE001
-                return {"ok": False, "error": f"读取 {local_path} 失败: {exc}"}
+                return {"ok": False, "error": f"读取失败: {exc}"}
             if len(payload) > MAX_UPLOAD_BYTES:
                 return {"ok": False,
                         "error": f"文件超过 {MAX_UPLOAD_BYTES} 字节上限"}
