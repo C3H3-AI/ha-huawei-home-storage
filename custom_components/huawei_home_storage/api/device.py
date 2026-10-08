@@ -22,9 +22,7 @@ from typing import Any
 import aiohttp
 
 from ..const import (
-    API_ALBUM_CFG,
     API_ALBUM_LIST,
-    API_ALBUM_MEMBERS,
     API_DISK_CHANGE,
     API_FILES,
     API_HEARTBEAT,
@@ -37,7 +35,6 @@ from ..const import (
     API_BATCH_OPERATION,
     API_MKDIR,
     API_RENAME,
-    API_ALL_FILES,
     API_FILE_DETAIL,
     API_FILE_SEARCH,
     API_TRANS_MOVE,
@@ -369,13 +366,6 @@ class HuaweiDeviceClient:
         data = await self._request(API_ALBUM_LIST, {"albumType": album_type})
         return data.get("albumlist") or []
 
-    async def async_get_album_cfg(self, album_id: int, album_type: int) -> dict[str, Any]:
-        """相册详情：只含元数据 + coverInfo，**不含成员列表**。"""
-        data = await self._request(
-            API_ALBUM_CFG, {"albumId": album_id, "albumType": album_type}
-        )
-        return data.get("data") or {}
-
     async def async_upload_file(
         self,
         dest_path: str,
@@ -520,16 +510,6 @@ class HuaweiDeviceClient:
             if mrow:
                 next_row = mrow
         return {"photos": photos, "lastCreTime": next_cre, "lastRowId": next_row}
-
-    async def async_get_album_members(
-        self, album_type: int, pre_id: int = 0, num: int = 500
-    ) -> list[dict[str, Any]]:
-        """相册成员增量表：仅 ``{albumId, albumType, fileId, optType, optTime}``，无路径。"""
-        data = await self._request(
-            API_ALBUM_MEMBERS,
-            {"albumType": album_type, "preId": pre_id, "num": num},
-        )
-        return data.get("data") or []
 
     async def async_get_photos_table(self, pre_row_id: int = 0) -> dict[str, Any]:
         """照片增量表：``{deviceId, fileId, operation, rowId}``，固定 500 条/页。"""
@@ -762,49 +742,9 @@ class HuaweiDeviceClient:
         data = await self._request(API_USER_MANAGE)
         return data if isinstance(data, list) else []
 
-    async def async_get_recycle_files(self) -> dict[str, Any]:
-        data = await self._request(API_RECYCLE, {"category": "user", "limit": 1, "offset": 0})
-        return data.get("data") or {}
-
     async def async_get_usb_status(self) -> dict[str, Any]:
         data = await self._request(API_USB_STATUS)
         return data.get("data") or {}
-
-    # ------------------------------------------------------------------
-    # 上传（/filesvc/prepareUpload，见 docs/huawei-storage-upload-protocol.md）
-    # ------------------------------------------------------------------
-    async def async_prepare_upload(
-        self, dest_path: str, file_size: int, src_path: str | None = None
-    ) -> dict[str, Any]:
-        """上传第一步：向设备申请文件占位，拿 ``fileId`` + ``sessionId``。
-
-        实测（2026-10-08，AS6020-02）：::
-
-            POST /filesvc/prepareUpload?clientType=3&deviceId=<devId>
-            {"deviceId":..., "uploadType":1,
-             "files":[{"path":"/file/x.txt","fileSize":11,"srcPath":"/file/x.txt"}]}
-            -> {"code":0,"data":{"fileList":[{"fileId":...,"sessionId":...,
-                "offset":0,"path":...,"srcPath":...,"status":0,"taskId":0}]}}
-
-        返回 ``data.fileList[0]``；失败（无 fileList/sessionId）时抛
-        :class:`RuntimeError`。后续字节流与完成通知见协议文档第 1 节，
-        尚未落地（设备对第三方身份仍返回 ``1004``，见文档「未完成」）。
-        """
-        src = src_path or dest_path
-        creds = await self.async_ensure_credentials()
-        data = await self._request(
-            API_PREPARE_UPLOAD,
-            method="POST",
-            json_body={
-                "deviceId": creds.cloud_dev_id,
-                "uploadType": 1,
-                "files": [{"path": dest_path, "fileSize": file_size, "srcPath": src}],
-            },
-        )
-        items = ((data.get("data") or {}).get("fileList") or [])
-        if not items or not items[0].get("sessionId"):
-            raise RuntimeError(f"prepareUpload 未返回会话: {data}")
-        return items[0]
 
     async def async_mkdir(
         self, path: str, category: str = FILE_FILES_CATEGORY
@@ -1052,22 +992,6 @@ class HuaweiDeviceClient:
                        "fids": list(fids)},
         )
 
-    async def async_all_files(
-        self, category: str = "public", offset: int = 0, limit: int = FILES_PAGE_SIZE
-    ) -> dict[str, Any]:
-        """全文件视图（``/filesvc/allFiles``，端点实测存在）。
-
-        与 :meth:`async_list_files` 的差别：后者按目录逐层浏览（需 ``Dest-File``），
-        前者是扁平的全量视图。
-        """
-        data = await self._request(
-            API_ALL_FILES,
-            {"category": category, "limit": limit, "offset": offset},
-            extra_headers={"Dest-File": encode_device_path(FILE_ROOT_PATH)},
-        )
-        inner = data.get("data") or {}
-        return {"files": inner.get("files") or [], "count": inner.get("count")}
-
     async def async_file_detail(self, path: str, category: str = "public") -> dict[str, Any]:
         """文件/目录详情（``/filesvc/detail``）。
 
@@ -1136,6 +1060,44 @@ class HuaweiDeviceClient:
                                    params={"category": dst_category},
                                    json_body=body)
 
+    async def async_trans_copy(
+        self,
+        src_paths: list[str],
+        dst_dir: str,
+        device_id: str,
+        src_category: str = "public",
+        dst_category: str = "public",
+    ) -> dict[str, Any]:
+        """同空间复制文件/目录（``/trans/copy``）。
+
+        与 :meth:`async_trans_move` **同构**（2026-10-08 实机对照实测）：
+        `tasks[]` 数组 + 同样的字段，扁平 body 会被拒 ``1100``::
+
+            POST /trans/copy?category=user
+            {"tasks":[{"deviceId":..,"sCategory":"user",
+                       "sPaths":["/file/源/"],"dCategory":"user",
+                       "dPath":"/file/目标/","dVersion":1,"name":"源",
+                       "subTaskId":1,"transId":"<12 位>"}]}
+            -> {"code":0,"data":{"tasks":[{"centerId":..,"id":..,"transId":..}]}}
+
+        与 move 一样是**异步任务**：``code 0`` 只代表受理，用
+        :meth:`async_get_task_status` 查进度。目标目录需**已存在**。
+        """
+        body = {"tasks": [{
+            "deviceId": device_id,
+            "sCategory": src_category,
+            "sPaths": list(src_paths),
+            "dCategory": dst_category,
+            "dPath": dst_dir,
+            "dVersion": 1,
+            "name": str(int(asyncio.get_event_loop().time() * 1000)),
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+        }]}
+        return await self._request(API_TRANS_COPY, method="POST",
+                                   params={"category": dst_category},
+                                   json_body=body)
+
     async def async_trans_acrosscopy(
         self,
         src_files: list[dict[str, Any]],
@@ -1189,6 +1151,26 @@ class HuaweiDeviceClient:
                 "deviceId": creds.cloud_dev_id,
                 "taskCategory": category,
                 "taskTypes": task_types,
+            },
+        )
+        return (data.get("data") or {}).get("tasks") or []
+
+    async def async_get_all_trans_tasks(self) -> list[dict[str, Any]]:
+        """跨服务传输任务**全表**（``/trans/getAllTask``，实测 ``code 0``）。
+
+        与 :meth:`async_get_task_status` 的区别：后者要传 ``taskTypes``
+        只取指定段；这个不带筛选，返回 `trans` 域全部任务。
+        实测（2026-10-08）：``{"code":0,"data":{"tasks":[]}}``；
+        同一批探测里 ``/filesvc/getAllTask`` 返回**非 JSON**（不可用）。
+        """
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            "/trans/getAllTask",
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "taskCategory": 2,
             },
         )
         return (data.get("data") or {}).get("tasks") or []

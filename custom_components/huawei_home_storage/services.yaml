@@ -162,6 +162,26 @@ task_status:
       name: 任务分类
       required: false
       selector: {number: {min: 0, max: 99}}
+    all_tasks:
+      name: 取 trans 全表
+      description: 走 /trans/getAllTask（不带 taskTypes 筛选）
+      required: false
+      default: false
+      selector: {boolean: {}}
+
+photo_info:
+  name: 照片元数据
+  description: 把相册照片的 fileId 换成完整元数据（含 hdcFilePath 原图路径）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_ids:
+      name: 照片 fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
 
 list_recycle:
   name: 列回收站
@@ -191,7 +211,7 @@ list_recycle:
 # ---------------------------------------------------------------------------
 create_folder:
   name: 新建目录
-  description: 在文件空间新建目录（路径需带尾斜杠，重名会报错而不是改名）
+  description: 在文件空间新建目录（可给 path 单个，或 paths 批多个；重名会报错而不是改名）
   fields:
     entry_id:
       name: 配置条目 ID
@@ -199,9 +219,17 @@ create_folder:
       selector: {text: {}}
     path:
       name: 目录路径
-      required: true
+      description: 单个目录，需带尾斜杠
+      required: false
       example: /file/备份/
       selector: {text: {}}
+    paths:
+      name: 目录路径（批量）
+      description: 与 path 二选一或同给；设备侧批量接口参数未解出，这里是逐个建
+      required: false
+      example: "['/file/备份/', '/file/归档/']"
+      selector:
+        text: {multiple: true}
     category:
       name: 空间
       required: false
@@ -258,6 +286,39 @@ move_paths:
       name: 目标目录
       required: true
       example: /file/归档/
+      selector: {text: {}}
+    category:
+      name: 源空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    dest_category:
+      name: 目标空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+copy_paths:
+  name: 复制文件/目录
+  description: 把若干文件/目录复制到一个目标目录（同空间，异步任务；目标目录需已存在）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 源路径
+      description: 目录需带尾斜杠
+      required: true
+      example: "['/file/源目录/']"
+      selector:
+        text: {multiple: true}
+    dest_dir:
+      name: 目标目录
+      required: true
+      example: /file/目标目录/
       selector: {text: {}}
     category:
       name: 源空间

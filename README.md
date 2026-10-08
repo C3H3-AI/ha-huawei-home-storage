@@ -156,9 +156,10 @@ Home Assistant 自定义集成，用于接入**华为家庭存储**（AS6020 系
 
 | 服务 | 说明 |
 |------|------|
-| `create_folder` | 新建目录（`path` 需带尾斜杠；重名报错，不自动改名） |
+| `create_folder` | 新建目录（`path` 单个或 `paths` 批量；重名报错，不自动改名） |
 | `rename_path` | 重命名（`old_path` → `new_path`；目录带尾斜杠、文件不带） |
 | `move_paths` | 把若干文件/目录移动到 `dest_dir` |
+| `copy_paths` | 把若干文件/目录复制到 `dest_dir`（同空间；目标目录需已存在） |
 | `delete_paths` | 删除文件/目录 —— **一律移入回收站**（可逆） |
 | `upload_file` | 上传文本（`content`）或 HA 主机上的文件（`local_path`） |
 | `cancel_upload` | 取消进行中的上传（需 `prepareUpload` 的 `fileId`） |
@@ -167,8 +168,9 @@ Home Assistant 自定义集成，用于接入**华为家庭存储**（AS6020 系
 | `recover_recycle` | 从回收站恢复（给 `rid`，或给 `paths`/`names` 自动匹配） |
 | `query_files` | 列最近/全部/指定目录/相册照片（只读） |
 | `file_detail` | 文件/目录详情（`/file/` 这类有效路径可用） |
+| `photo_info` | 把相册照片的 `fileId` 换成完整元数据（含 `hdcFilePath` 原图路径） |
 | `search_files` | 按关键字搜索（设备参数未解出，目前返回失败，调用需容错） |
-| `task_status` | 查任务中心（`filesvc` = 文件空间任务 / `trans` = 跨服务传输） |
+| `task_status` | 查任务中心（`filesvc` / `trans`；`all_tasks: true` 取 trans 全表） |
 
 字段示例（`target` 泛指上述服务，`entry_id` 均可选）：
 

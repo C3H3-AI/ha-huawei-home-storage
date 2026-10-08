@@ -2,11 +2,11 @@
 
 服务分三类：
 * **只读查询**：``query_files`` / ``file_detail`` / ``search_files`` /
-  ``task_status`` / ``list_recycle``
+  ``task_status`` / ``list_recycle`` / ``photo_info``
 * **文件空间写入**：``create_folder`` / ``rename_path`` / ``move_paths`` /
-  ``delete_paths`` / ``upload_file`` / ``cancel_upload`` / ``copy_to_album`` /
-  ``recover_recycle``（删除**一律进回收站**、可逆；永久删除的端点参数没解出，
-  集成不提供，回收站条目请在客户端 App 里清）
+  ``copy_paths`` / ``delete_paths`` / ``upload_file`` / ``cancel_upload`` /
+  ``copy_to_album`` / ``recover_recycle``（删除**一律进回收站**、可逆；
+  永久删除的端点参数没解出，集成不提供，回收站条目请在客户端 App 里清）
 * **设备/账号运维**：``refresh_credentials`` / ``duplicate_scan`` /
   ``reboot_device`` / ``disk_sleep`` / ``usb_plug_out``
 
@@ -43,6 +43,7 @@ SERVICE_RECOVER_MEDIA = "recover_media"
 SERVICE_CREATE_FOLDER = "create_folder"
 SERVICE_RENAME_PATH = "rename_path"
 SERVICE_MOVE_PATHS = "move_paths"
+SERVICE_COPY_PATHS = "copy_paths"
 SERVICE_DELETE_PATHS = "delete_paths"
 SERVICE_UPLOAD_FILE = "upload_file"
 SERVICE_CANCEL_UPLOAD = "cancel_upload"
@@ -51,6 +52,7 @@ SERVICE_LIST_RECYCLE = "list_recycle"
 SERVICE_RECOVER_RECYCLE = "recover_recycle"
 SERVICE_FILE_DETAIL = "file_detail"
 SERVICE_SEARCH_FILES = "search_files"
+SERVICE_PHOTO_INFO = "photo_info"
 SERVICE_TASK_STATUS = "task_status"
 # ---- 设备级运维 ----
 SERVICE_REBOOT_DEVICE = "reboot_device"
@@ -269,10 +271,20 @@ async def async_register_services(hass: HomeAssistant) -> None:
         return {"ok": True, "keyword": call.data["keyword"], "result": data}
 
     async def _task_status(call: "ServiceCall") -> "ServiceResponse":
-        """查传输任务中心（只读）：filesvc（文件空间）/ trans（跨服务传输）。"""
+        """查传输任务中心（只读）：filesvc（文件空间）/ trans（跨服务传输）。
+
+        ``all_tasks: true`` 时走 ``/trans/getAllTask``（不带 taskTypes 筛选）。
+        """
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
+        if call.data.get("all_tasks"):
+            try:
+                tasks = await runtime.client.async_get_all_trans_tasks()
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc)}
+            return {"ok": True, "service": "trans/all", "count": len(tasks),
+                    "tasks": tasks}
         service = call.data.get("service") or "filesvc"
         types = call.data.get("task_types")
         if not types:
@@ -286,6 +298,19 @@ async def async_register_services(hass: HomeAssistant) -> None:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "service": service, "count": len(tasks), "tasks": tasks}
+
+    async def _photo_info(call: "ServiceCall") -> "ServiceResponse":
+        """把相册照片的 ``fileId`` 换成完整元数据（含 ``hdcFilePath`` 原图路径）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        ids = [int(i) for i in call.data["file_ids"]]
+        try:
+            items = await runtime.client.async_get_photos_info(ids)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("取照片元数据失败(%s): %s", ids, exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "count": len(items), "items": items}
 
     async def _list_recycle(call: "ServiceCall") -> "ServiceResponse":
         """列回收站（只读）——恢复要用条目里的 ``rid``。"""
@@ -306,24 +331,36 @@ async def async_register_services(hass: HomeAssistant) -> None:
     # 文件空间写入
     # ------------------------------------------------------------------
     async def _create_folder(call: "ServiceCall") -> "ServiceResponse":
-        """新建目录（``/filesvc/mkdir``）。"""
+        """新建目录（``/filesvc/mkdir``）—— 支持一次给多个路径（逐个建，部分失败也如实回报）。
+
+        ⚠️ 设备侧 ``/filesvc/createDirs``（批量建目录）**参数没解出**：
+        `{paths:[..]}`、`{dirs:[..]}`、`{path:[..],redundancy:0}`、`tasks[]`
+        四种形态实测全部 ``1101``，所以批量只能在这里循环调 mkdir。
+        """
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
-        path = call.data["path"]
+        paths = [str(p) for p in (call.data.get("paths") or [])]
+        if call.data.get("path"):
+            paths.append(str(call.data["path"]))
+        if not paths:
+            return {"ok": False, "error": "path 与 paths 至少给一个"}
         category = call.data.get("category") or DEFAULT_CATEGORY
-        try:
-            data = await runtime.client.async_mkdir(path, category=category)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.error("新建目录失败(%s): %s", path, exc)
-            return {"ok": False, "path": path, "error": str(exc)}
+        created: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        for raw in paths:
+            try:
+                data = await runtime.client.async_mkdir(raw, category=category)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.error("新建目录失败(%s): %s", raw, exc)
+                failed.append({"path": raw, "error": str(exc)})
+                continue
+            created.append({
+                "path": raw if raw.endswith("/") else raw + "/",
+                "fid": (data or {}).get("fid"),
+            })
         await runtime.fast.async_request_refresh()
-        return {
-            "ok": True,
-            "path": path if path.endswith("/") else path + "/",
-            "category": category,
-            "fid": (data or {}).get("fid"),
-        }
+        return {"ok": not failed, "created": created, "failed": failed}
 
     async def _rename_path(call: "ServiceCall") -> "ServiceResponse":
         """重命名（``/filesvc/rename``）：``old_path`` → ``new_path``。
@@ -367,6 +404,30 @@ async def async_register_services(hass: HomeAssistant) -> None:
             )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("移动失败(%s → %s): %s", paths, dest, exc)
+            return {"ok": False, "error": str(exc)}
+        await runtime.fast.async_request_refresh()
+        ok, dev_err = _device_ok(result)
+        return {"ok": ok, "count": len(paths), "dest_dir": dest,
+                "error": dev_err, "result": result}
+
+    async def _copy_paths(call: "ServiceCall") -> "ServiceResponse":
+        """同空间复制文件/目录（``/trans/copy``，异步任务；目标目录需已存在）。"""
+        runtime, entry, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        if (bad := _need_device_id(entry)) is not None:
+            return bad
+        paths = _paths(call)
+        dest = call.data["dest_dir"]
+        category = call.data.get("category") or DEFAULT_CATEGORY
+        try:
+            result = await runtime.client.async_trans_copy(
+                paths, dest, _entry_device_id(entry),
+                src_category=category,
+                dst_category=call.data.get("dest_category") or category,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("复制失败(%s → %s): %s", paths, dest, exc)
             return {"ok": False, "error": str(exc)}
         await runtime.fast.async_request_refresh()
         ok, dev_err = _device_ok(result)
@@ -647,7 +708,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_CREATE_FOLDER, _create_folder,
         schema=vol.Schema({
             **entry_field,
-            vol.Required("path"): str,
+            vol.Optional("path"): str,
+            vol.Optional("paths"): vol.All(cv.ensure_list, [str], vol.Length(max=MAX_BATCH)),
             vol.Optional("category"): CATEGORY,
         }),
         supports_response=SupportsResponse.ONLY,
@@ -665,6 +727,17 @@ async def async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_MOVE_PATHS, _move_paths,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("paths"): path_list,
+            vol.Required("dest_dir"): str,
+            vol.Optional("category"): CATEGORY,
+            vol.Optional("dest_category"): CATEGORY,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_COPY_PATHS, _copy_paths,
         schema=vol.Schema({
             **entry_field,
             vol.Required("paths"): path_list,
@@ -764,6 +837,17 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Optional("service", default="filesvc"): vol.In(("filesvc", "trans")),
             vol.Optional("task_types"): vol.All(cv.ensure_list, [vol.Coerce(int)]),
             vol.Optional("task_category", default=2): vol.Coerce(int),
+            vol.Optional("all_tasks", default=False): cv.boolean,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_PHOTO_INFO, _photo_info,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("file_ids"): vol.All(
+                cv.ensure_list, [vol.Coerce(int)], vol.Length(min=1, max=MAX_BATCH)
+            ),
         }),
         supports_response=SupportsResponse.ONLY,
     )
