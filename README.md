@@ -254,24 +254,108 @@ Home Assistant 自定义集成，用于接入**华为家庭存储**（AS6020 系
 | `album_info` | 单个相册的元数据与**封面原图路径**（相册列表封面为空时的兜底） |
 | `album_changes` | 相册增量表：哪些相册有变动（只读） |
 
-字段示例（`target` 泛指上述服务，`entry_id` 均可选）：
+字段示例（`entry_id` 在多设备时才需要，单设备可全省）：
 
 ```yaml
+# ① 建目录：单个 / 批量（批量是逐个建，设备侧批量接口参数未解出）
 service: huawei_home_storage.create_folder
 data:
   path: /file/备份/
   category: user          # user = 我的文件；public = 共享
 
+service: huawei_home_storage.create_folder
+data:
+  paths:
+    - /file/归档/
+    - /file/临时/
+  category: user
+
+# ② 改名 / 移动 / 复制（复制与移动同构，目标目录需已存在）
 service: huawei_home_storage.rename_path
 data:
   old_path: /file/备份/
   new_path: /file/备份_2026/
 
+service: huawei_home_storage.move_paths
+data:
+  paths: ["/file/临时/"]
+  dest_dir: /file/归档/
+  category: user
+
+service: huawei_home_storage.copy_paths
+data:
+  paths: ["/file/备份/"]
+  dest_dir: /file/归档/
+  category: user
+
+# ③ 上传：文本或 HA 主机上的文件（二选一）
 service: huawei_home_storage.upload_file
 data:
   dest_path: /file/备份/note.txt
   content: "hello from HA"
+
+service: huawei_home_storage.upload_file
+data:
+  dest_path: /file/备份/config.yaml
+  local_path: /config/configuration.yaml
+  category: user
+
+# ④ 删除（进回收站）+ 回收站列表 / 恢复
+service: huawei_home_storage.delete_paths
+data:
+  paths: ["/file/临时/"]
+
+service: huawei_home_storage.list_recycle
+data:
+  limit: 50
+
+service: huawei_home_storage.recover_recycle
+data:
+  paths: ["/file/临时/"]        # 也可直接给 rid
+
+# ⑤ 搜索（参数由穷举实测得出）
+service: huawei_home_storage.search_files
+data:
+  keyword: 发票
+  category: user
+  limit: 20
+
+# ⑥ 任务中心（删除/移动/复制都是异步任务）
+service: huawei_home_storage.task_status
+data:
+  service: filesvc           # filesvc / trans / gallery
+
+service: huawei_home_storage.get_task
+data:
+  task_id: 18
+
+# ⑦ 相册：加入相册 / 共享到人物 / 相册详情 / 照片元数据
+service: huawei_home_storage.add_to_album
+data:
+  album_id: 13
+  file_ids: [281474976755920]
+
+service: huawei_home_storage.share_to_person
+data:
+  album_id: 13
+  owner_id: 10001
+  file_ids: [281474976755920]
+
+service: huawei_home_storage.album_info
+data:
+  album_id: 16
+
+service: huawei_home_storage.photo_info
+data:
+  file_ids: [281474976755033]
+
+# ⑧ 运维：凭据刷新 / 备份目标相关见「HA 备份」一节
+service: huawei_home_storage.refresh_credentials
+data: {}
 ```
+
+响应里统一带 `ok`：只读服务直接返回结果（如 `items` / `count`），
+写服务返回 `{ok: true, ...}`。失败时 `ok: false` 且 `error` 写明设备返回码。
 
 > ⚠️ **删除只会进回收站**：集成不提供永久删除 —— 设备侧 `type=delete` 与
 > `/filesvc/recycleDelFiles` 的参数都没解出（实测恒 `1101`）。回收站条目请在
@@ -295,6 +379,22 @@ data:
 | `reboot_device` | ⚠️ 重启存储设备（服务中断约 1-2 分钟） |
 | `disk_sleep` | 磁盘休眠（可恢复） |
 | `usb_plug_out` | ⚠️ 弹出 USB 设备（正在读写的文件会中断） |
+
+---
+
+## 自动化蓝图（开箱即用）
+
+仓库自带 `blueprints/automation/huawei_home_storage/`，装好集成后可在
+**设置 → 自动化与场景 → 创建自动化 → 使用蓝图** 里直接导入：
+
+| 蓝图 | 作用 |
+|------|------|
+| **定期清理临时目录** | 按计划把指定目录清进**回收站**（不是永久删除，可在客户端还原），完成后可选通知 |
+| **设备离线自动恢复凭据并通知** | 设备离线满一定时长后先自动刷新会话凭据自愈，仍离线再发通知 |
+
+导入后只需选实体 / 填路径即可，不用自己写 YAML。
+
+> 蓝图的触发器和动作都基于上面的服务，逻辑可直接照抄改成自己的自动化。
 
 ---
 
