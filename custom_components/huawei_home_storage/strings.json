@@ -772,6 +772,82 @@
           "description": "与 file_ids 一一对应，可留空。"
         }
       }
+    },
+    "list_albums": {
+      "name": "列相册",
+      "description": "列出相册。注意 album_type=0 不含 type=6（用户/共享相册）。",
+      "fields": {
+        "album_type": {
+          "name": "相册类型",
+          "description": "0=分类相册；6=用户/共享相册。"
+        }
+      }
+    },
+    "album_photos": {
+      "name": "相册照片",
+      "description": "列出相册内的照片（含路径与缩略图），支持游标分页。",
+      "fields": {
+        "album_id": {
+          "name": "相册 ID",
+          "description": "目标相册 id。"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": "用户/共享相册为 6。"
+        },
+        "num": {
+          "name": "每页条数",
+          "description": "最多返回多少张。"
+        },
+        "last_cre_time": {
+          "name": "分页游标",
+          "description": "首页 0；下一页用返回的 lastCreTime。"
+        },
+        "last_row_id": {
+          "name": "分页游标",
+          "description": "首页 0；下一页用返回的 lastRowId。"
+        }
+      }
+    },
+    "list_trash": {
+      "name": "最近删除",
+      "description": "回收站查询（返回完整元数据，含原图路径）。",
+      "fields": {
+        "num": {
+          "name": "条数",
+          "description": "最多返回多少条。"
+        },
+        "offset": {
+          "name": "偏移",
+          "description": "翻页用。"
+        }
+      }
+    },
+    "duplicate_scan_result": {
+      "name": "重复照片结果",
+      "description": "查询重复照片扫描的结果（需先调用 duplicate_scan 的 start）。",
+      "fields": {
+        "task_id": {
+          "name": "任务 ID",
+          "description": "扫描任务 id。"
+        },
+        "limit": {
+          "name": "条数",
+          "description": "最多返回多少组。"
+        },
+        "offset": {
+          "name": "偏移",
+          "description": "翻页用。"
+        },
+        "filter": {
+          "name": "过滤",
+          "description": "设备侧过滤参数。"
+        }
+      }
+    },
+    "device_diagnostics": {
+      "name": "设备诊断",
+      "description": "一次性取回设备错误码、维修模式、Samba 共享状态（排障用）。"
     }
   },
   "common": {
