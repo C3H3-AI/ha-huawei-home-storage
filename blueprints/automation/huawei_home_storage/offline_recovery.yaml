@@ -1,0 +1,91 @@
+blueprint:
+  name: 华为家庭存储 · 设备离线自动恢复凭据并通知
+  description: >-
+    设备离线后自动尝试刷新会话凭据（会话过期是最常见的离线原因），
+    若持续离线超过设定时长则发通知。
+  domain: automation
+  author: C3H3-AI
+  input:
+    online_sensor:
+      name: 设备在线传感器
+      description: 选一个 binary_sensor.*_online。
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+              device_class: connectivity
+    offline_duration:
+      name: 持续离线多久后通知
+      description: 在这段时间内会先尝试自动恢复，超过仍未恢复才通知。
+      default:
+        minutes: 10
+      selector:
+        duration:
+    notify_service:
+      name: 通知服务（可选）
+      description: 如 notify.mobile_app_xxx。留空则用 persistent_notification。
+      default: ""
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input online_sensor
+    to: "off"
+    for: !input offline_duration
+
+actions:
+  # ① 先尝试刷新凭据（多数情况能自愈）
+  - action: huawei_home_storage.refresh_credentials
+    data: {}
+    response_variable: refresh_result
+
+  - wait_for_trigger:
+      - trigger: state
+        entity_id: !input online_sensor
+        to: "on"
+    timeout:
+      minutes: 2
+    continue_on_timeout: true
+
+  # ② 仍离线 → 通知
+  - if:
+      - condition: state
+        entity_id: !input online_sensor
+        state: "off"
+    then:
+      - if:
+          - condition: template
+            value_template: "{{ (notify_service or '') != '' }}"
+        then:
+          - action: "{{ notify_service }}"
+            data:
+              title: 家庭存储离线
+              message: >-
+                {{ state_attr(online_sensor, 'friendly_name') or online_sensor }}
+                已离线超过设定时长，且刷新凭据后仍未恢复。
+                请检查设备是否开机/在线。刷新结果：{{ refresh_result }}
+        else:
+          - action: persistent_notification.create
+            data:
+              title: 家庭存储离线
+              message: >-
+                {{ state_attr(online_sensor, 'friendly_name') or online_sensor }}
+                已离线超过设定时长，且刷新凭据后仍未恢复。刷新结果：{{ refresh_result }}
+    else:
+      - if:
+          - condition: template
+            value_template: "{{ (notify_service or '') != '' }}"
+        then:
+          - action: "{{ notify_service }}"
+            data:
+              title: 家庭存储已恢复
+              message: 刷新凭据后设备已重新在线。
+        else:
+          - action: persistent_notification.create
+            data:
+              title: 家庭存储已恢复
+              message: 刷新凭据后设备已重新在线。

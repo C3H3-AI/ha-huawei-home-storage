@@ -1,0 +1,84 @@
+blueprint:
+  name: 华为家庭存储 · 定期清理临时目录
+  description: >-
+    按计划把家庭存储上的临时目录清进**回收站**（不是永久删除，可在客户端还原）。
+    适合配合面板/自动化产生的临时上传目录使用。
+  domain: automation
+  author: C3H3-AI
+  input:
+    clean_time:
+      name: 清理时间
+      description: 每天执行清理的时刻。
+      default: "04:00:00"
+      selector:
+        time:
+    target_paths:
+      name: 要清理的目录
+      description: >-
+        设备路径，目录需带尾斜杠。可填多个，用 YAML 列表。
+        默认是设备上的「临时」目录。
+      default:
+        - "/file/临时/"
+      selector:
+        object:
+    space:
+      name: 空间
+      description: user = 我的文件；public = 共享。
+      default: user
+      selector:
+        select:
+          options:
+            - label: 我的文件
+              value: user
+            - label: 共享
+              value: public
+    notify_service:
+      name: 通知服务（可选）
+      description: >-
+        清理完成后调用的通知服务，如 notify.mobile_app_xxx。留空则使用 persistent_notification。
+      default: ""
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+variables:
+  target_paths: !input target_paths
+  space: !input space
+
+triggers:
+  - trigger: time
+    at: !input clean_time
+
+actions:
+  - action: huawei_home_storage.delete_paths
+    data:
+      paths: "{{ target_paths }}"
+      category: "{{ space }}"
+    response_variable: del_result
+
+  - if:
+      - condition: template
+        value_template: "{{ del_result is mapping and del_result.get('ok', false) }}"
+    then:
+      - if:
+          - condition: template
+            value_template: "{{ (notify_service or '') != '' }}"
+        then:
+          - action: "{{ notify_service }}"
+            data:
+              title: 家庭存储已清理
+              message: >-
+                已将 {{ target_paths | join('、') }} 移入回收站（未永久删除，可在客户端还原）。
+        else:
+          - action: persistent_notification.create
+            data:
+              title: 家庭存储已清理
+              message: >-
+                已将 {{ target_paths | join('、') }} 移入回收站（未永久删除，可在客户端还原）。
+    else:
+      - action: persistent_notification.create
+        data:
+          title: 家庭存储清理失败
+          message: "设备返回：{{ del_result }}"
