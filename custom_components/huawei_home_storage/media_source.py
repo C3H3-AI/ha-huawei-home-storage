@@ -474,14 +474,6 @@ class HuaweiHomeStorageMediaSource(MediaSource):
         # 2) 无成员（如「所有照片」这类分类相册 coverInfo 为 null）→ 回退封面
         if not children:
             cover = _first_cover(album)
-            # 列表里也没封面时，用 albumCfg（GET，实测可用）兜底——它在相册内部
-            # 才发这一次请求，列表浏览不受影响（列表是同步的，不打设备请求）。
-            if not cover and album_type:
-                try:
-                    cfg = await client.async_get_album_cfg(album_id, album_type)
-                    cover = _first_cover(cfg)
-                except Exception:  # noqa: BLE001  取不到就维持"无封面"
-                    cover = {}
             for field in ("hdcFilePath", "lcdFilePath", "thumbFilePath"):
                 path = cover.get(field)
                 if path:
