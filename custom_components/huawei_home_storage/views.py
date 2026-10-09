@@ -23,6 +23,10 @@ from .const import (
     CONF_HOST,
     CONF_LOGIN_METHOD,
     DOMAIN,
+
+    CONF_BACKUP_DIR,
+    CONF_BACKUP_SPACE,
+    DEFAULT_BACKUP_DIR,
 )
 
 from .transfer import ensure_dir, upload_stream
@@ -374,6 +378,19 @@ class HuaweiStorageStatusView(HomeAssistantView):
                     # ⚠️ 设备序列号属红线，面板只展示脱敏形式
                     "device_sn": mask_sn(cfg.get(CONF_DEVICE_SN)),
                     "device_model": cfg.get(CONF_DEVICE_MODEL) or "",
+                    # 面板「配置」视图展示备份目标：读法与 backup.py 的 _opts 一致
+                    # （data 与 options 合并、options 优先），用户在 options 里改了
+                    # 备份目录后，面板能立刻看到。
+                    "backup_dir": (
+                        (dict(entry.options or {})).get(CONF_BACKUP_DIR)
+                        or cfg.get(CONF_BACKUP_DIR)
+                        or DEFAULT_BACKUP_DIR
+                    ),
+                    "backup_space": (
+                        (dict(entry.options or {})).get(CONF_BACKUP_SPACE)
+                        or cfg.get(CONF_BACKUP_SPACE)
+                        or "user"
+                    ),
                     "login_method": cfg.get(CONF_LOGIN_METHOD) or "",
                     "account": mask_account(cfg.get(CONF_ACCOUNT)),
                     "host": cfg.get(CONF_HOST) or "",

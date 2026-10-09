@@ -6,22 +6,20 @@
  */
 const STYLES = String.raw`
 :host{
-  /* —— 跟随 HA 主题（深浅色都成立） —— */
+  /* ============ 主题变量（默认：HA 原生跟随模式）============ */
   --bg:var(--primary-background-color,#f4f6fa);
   --card:var(--card-background-color,var(--ha-card-background,#ffffff));
   --text:var(--primary-text-color,#17202a);
   --text2:var(--secondary-text-color,#64748b);
   --divider:var(--divider-color,#e6eaf0);
 
-  /* —— 品牌：青蓝 + 暖调点缀 —— */
+  /* 品牌：青蓝 */
   --brand:#0e8fc4;
   --brand-2:#12b3e8;
   --brand-soft:rgba(14,143,196,.10);
   --brand-line:rgba(14,143,196,.24);
 
-  --ok:#2fa563;
-  --warn:#e0902a;
-  --danger:#d94f45;
+  --ok:#2fa563;  --warn:#e0902a;  --danger:#d94f45;
   --ok-soft:rgba(47,165,99,.12);
   --warn-soft:rgba(224,144,42,.14);
   --danger-soft:rgba(217,79,69,.12);
@@ -37,17 +35,64 @@ const STYLES = String.raw`
 
   --font-display:'Baloo 2','HarmonyOS Sans SC','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;
   --font-body:'IBM Plex Sans','HarmonyOS Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+
+  /* 玻璃质感强度（0=关闭，1=最强）—— 皮肤可覆盖 */
+  --glass:0;
+  --glass-blur:16px;
+  --surface-alpha:1;
+  --accent-glow:none;
 }
+
+/* ============ 皮肤：极光（玻璃拟态·青蓝）============ */
+:host([data-skin="aurora"]){
+  --glass:1; --glass-blur:18px; --surface-alpha:.72;
+  --bg:linear-gradient(150deg,#eaf6fb 0%,#f4f8fc 45%,#eef4fb 100%);
+  --card:rgba(255,255,255,.72);
+  --brand:#0e8fc4; --brand-2:#29c2f0;
+  --accent-glow:0 4px 14px rgba(14,143,196,.28);
+  --sh-2:0 10px 30px -6px rgba(14,143,196,.22),0 2px 8px -2px rgba(15,23,42,.08);
+}
+/* ============ 皮肤：墨夜（深色·霓虹点缀）============ */
+:host([data-skin="midnight"]){
+  --glass:1; --glass-blur:20px; --surface-alpha:.62;
+  --bg:radial-gradient(1200px 600px at 15% -10%,#16283a 0%,#0d1620 55%,#0a1119 100%);
+  --card:rgba(28,40,54,.66);
+  --text:#e8eef6; --text2:#93a4b8; --divider:rgba(255,255,255,.10);
+  --brand:#38d6f5; --brand-2:#5ce1c0;
+  --brand-soft:rgba(56,214,245,.14); --brand-line:rgba(56,214,245,.30);
+  --accent-glow:0 4px 16px rgba(56,214,245,.35);
+  --sh-2:0 12px 34px -8px rgba(0,0,0,.6),0 2px 8px -2px rgba(0,0,0,.4);
+  --ring:0 0 0 1px rgba(255,255,255,.07);
+}
+/* ============ 皮肤：暖砂（浅色·暖调柔和）============ */
+:host([data-skin="sand"]){
+  --bg:linear-gradient(160deg,#fdf8f2 0%,#fbf3ea 50%,#f7efe4 100%);
+  --card:rgba(255,253,250,.86);
+  --text:#3d3226; --text2:#8a7a68; --divider:rgba(120,95,70,.14);
+  --brand:#c8763c; --brand-2:#e0a066;
+  --brand-soft:rgba(200,118,60,.12); --brand-line:rgba(200,118,60,.26);
+  --accent-glow:0 4px 14px rgba(200,118,60,.22);
+  --radius:16px;
+}
+/* ============ 皮肤：森屿（自然·青绿）============ */
+:host([data-skin="forest"]){
+  --glass:1; --glass-blur:16px; --surface-alpha:.70;
+  --bg:linear-gradient(155deg,#eef7f0 0%,#e8f2ec 50%,#e3efe7 100%);
+  --card:rgba(252,255,253,.74);
+  --text:#22362c; --text2:#6f8a7c; --divider:rgba(60,100,80,.14);
+  --brand:#2fa563; --brand-2:#57c48c;
+  --brand-soft:rgba(47,165,99,.12); --brand-line:rgba(47,165,99,.26);
+  --accent-glow:0 4px 14px rgba(47,165,99,.24);
+}
+
 *{box-sizing:border-box}
 :host{
   display:block;
-  background:
-    radial-gradient(1100px 460px at 12% -8%,rgba(14,143,196,.07),transparent 62%),
-    radial-gradient(900px 420px at 96% 4%,rgba(224,144,42,.05),transparent 60%),
-    var(--bg);
+  background:var(--bg);
   color:var(--text);
   font:400 14px/1.55 var(--font-body);
   -webkit-font-smoothing:antialiased;
+  min-height:100%;
 }
 .app{display:flex;flex-direction:column;min-height:100%}
 
@@ -55,9 +100,9 @@ const STYLES = String.raw`
 .topbar{
   position:sticky;top:0;z-index:20;height:var(--topbar);
   display:flex;align-items:center;gap:12px;padding:0 20px;
-  background:color-mix(in srgb,var(--card) 84%,transparent);
-  backdrop-filter:blur(16px) saturate(1.5);
-  -webkit-backdrop-filter:blur(16px) saturate(1.5);
+  background:color-mix(in srgb,var(--card) calc(var(--surface-alpha)*100%),transparent);
+  backdrop-filter:blur(calc(var(--glass)*var(--glass-blur))) saturate(1.5);
+  -webkit-backdrop-filter:blur(calc(var(--glass)*var(--glass-blur))) saturate(1.5);
   border-bottom:1px solid var(--divider);
 }
 .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-display);
@@ -65,10 +110,19 @@ const STYLES = String.raw`
 .brand .logo{
   width:36px;height:36px;border-radius:12px;display:grid;place-items:center;
   background:linear-gradient(140deg,var(--brand-2),var(--brand));color:#fff;font-size:18px;
-  box-shadow:0 4px 12px rgba(14,143,196,.38),inset 0 1px 0 rgba(255,255,255,.28);
+  box-shadow:var(--accent-glow),inset 0 1px 0 rgba(255,255,255,.28);
 }
 .brand .sub{font-family:var(--font-body);font-weight:500;font-size:12px;color:var(--text2)}
 .spacer{flex:1}
+
+/* 皮肤切换器 */
+.skinner{display:flex;align-items:center;gap:3px;padding:3px;border-radius:999px;
+  background:var(--divider);flex:none}
+.skinner button{width:24px;height:24px;border-radius:50%;border:0;cursor:pointer;
+  padding:0;display:grid;place-items:center;font-size:11px;transition:transform .16s}
+.skinner button:hover{transform:scale(1.15)}
+.skinner button.on{box-shadow:0 0 0 2px var(--brand)}
+
 .pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
   padding:6px 13px;border-radius:999px;background:var(--ok-soft);color:var(--ok);flex:none}
 .pill.off{background:var(--danger-soft);color:var(--danger)}
@@ -85,7 +139,7 @@ const STYLES = String.raw`
 .accts:empty{display:none}
 .acct{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
   padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;
-  border:1px solid var(--divider);background:var(--card);color:var(--text2);
+  border:1px solid var(--divider);background:color-mix(in srgb,var(--card) 80%,transparent);color:var(--text2);
   transition:background .16s,color .16s,border-color .16s;white-space:nowrap}
 .acct:hover{background:var(--brand-soft);color:var(--text)}
 .acct.on{background:var(--brand-soft);color:var(--brand);border-color:var(--brand-line)}
@@ -99,7 +153,8 @@ const STYLES = String.raw`
 .body{flex:1;display:flex;align-items:flex-start}
 .nav{width:224px;flex:none;position:sticky;top:var(--topbar);
   height:calc(100vh - var(--topbar));overflow:auto;
-  padding:16px 11px;background:var(--card);border-right:1px solid var(--divider)}
+  padding:16px 11px;background:color-mix(in srgb,var(--card) 70%,transparent);
+  border-right:1px solid var(--divider)}
 .nav button{width:100%;display:flex;align-items:center;gap:12px;
   padding:11px 13px;margin-bottom:4px;border:0;border-radius:var(--radius-s);
   background:transparent;color:var(--text2);font-family:var(--font-body);
@@ -122,8 +177,11 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .vhead .sub{font-size:12px;color:var(--text2)}
 
 /* ========== 卡片 ========== */
-.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--sh-1),var(--ring);
-  padding:20px;margin-bottom:var(--gap);transition:box-shadow .2s}
+.card{background:color-mix(in srgb,var(--card) calc(var(--surface-alpha)*100%),transparent);
+  border-radius:var(--radius);box-shadow:var(--sh-1),var(--ring);
+  padding:20px;margin-bottom:var(--gap);transition:box-shadow .2s;
+  backdrop-filter:blur(calc(var(--glass)*var(--glass-blur)));
+  -webkit-backdrop-filter:blur(calc(var(--glass)*var(--glass-blur)))}
 .card:hover{box-shadow:var(--sh-2),var(--ring)}
 .card-h{display:flex;align-items:center;gap:10px;margin:0 0 15px;
   font-family:var(--font-display);font-size:14.5px;font-weight:700}
@@ -136,8 +194,9 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .grid.kpi{grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
 
 /* ========== KPI ========== */
-.tile{position:relative;overflow:hidden;background:var(--card);border-radius:15px;
+.tile{position:relative;overflow:hidden;border-radius:15px;
   box-shadow:var(--sh-1),var(--ring);padding:16px;display:flex;gap:14px;align-items:center;
+  background:color-mix(in srgb,var(--card) calc(var(--surface-alpha)*100%),transparent);
   transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s}
 .tile::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--brand);opacity:.85}
 .tile:hover{transform:translateY(-3px);box-shadow:var(--sh-2),var(--ring)}
@@ -169,13 +228,14 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 /* ========== 按钮 ========== */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
   padding:10px 17px;min-height:42px;border-radius:12px;cursor:pointer;
-  border:1px solid var(--divider);background:var(--card);color:var(--text);
+  border:1px solid var(--divider);
+  background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--text);
   font-family:var(--font-body);font-size:13.5px;font-weight:600;
   transition:background .16s,box-shadow .16s,transform .1s;text-decoration:none}
-.btn:hover{background:var(--bg);box-shadow:var(--sh-1)}
+.btn:hover{background:var(--brand-soft);box-shadow:var(--sh-1)}
 .btn:active{transform:scale(.97)}
 .btn.pri{background:linear-gradient(140deg,var(--brand-2),var(--brand));
-  border-color:transparent;color:#fff;box-shadow:0 4px 12px rgba(14,143,196,.32)}
+  border-color:transparent;color:#fff;box-shadow:var(--accent-glow)}
 .btn.pri:hover{filter:brightness(1.07)}
 .btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
 .btn.danger:hover{filter:brightness(1.06)}
@@ -186,22 +246,34 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 /* 分段控件 */
 .segs{display:flex;gap:6px;flex-wrap:wrap}
 .seg{padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;
-  border:1px solid var(--divider);background:var(--card);color:var(--text2);
+  border:1px solid var(--divider);
+  background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--text2);
   transition:background .16s,color .16s,border-color .16s}
 .seg:hover{background:var(--brand-soft);color:var(--text)}
 .seg.on{background:var(--brand-soft);color:var(--brand);border-color:var(--brand-line)}
 .seg .n{font-size:11px;opacity:.75;margin-left:5px}
 
+/* 搜索框 */
+.searchbar{display:flex;gap:8px;margin-bottom:16px}
+.searchbar input{flex:1;padding:11px 15px;border-radius:12px;font-size:14px;
+  border:1px solid var(--divider);
+  background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--text);
+  font-family:var(--font-body)}
+.searchbar input:focus{outline:none;border-color:var(--brand);
+  box-shadow:0 0 0 3px var(--brand-soft)}
+.searchbar .btn{flex:none}
+
 /* ========== 相册网格 ========== */
 .albums{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
 .alb{position:relative;border-radius:15px;overflow:hidden;cursor:pointer;
-  background:var(--card);box-shadow:var(--sh-1),var(--ring);
+  background:color-mix(in srgb,var(--card) 85%,transparent);
+  box-shadow:var(--sh-1),var(--ring);
   transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s}
 .alb:hover{transform:translateY(-3px);box-shadow:var(--sh-2),var(--ring)}
 .alb .cov{position:relative;aspect-ratio:1;background:var(--divider);overflow:hidden}
 .alb .cov img{width:100%;height:100%;object-fit:cover;display:block}
 .alb .cov .ph{width:100%;height:100%;display:grid;place-items:center;font-size:30px;
-  background:linear-gradient(140deg,rgba(14,143,196,.14),rgba(14,143,196,.05));color:var(--brand)}
+  background:linear-gradient(140deg,var(--brand-soft),transparent);color:var(--brand)}
 .alb .meta{padding:9px 11px 11px}
 .alb .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .alb .ct{font-size:11.5px;color:var(--text2);margin-top:2px}
@@ -219,6 +291,11 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .sk{width:100%;height:100%;background:
   linear-gradient(100deg,var(--divider) 30%,color-mix(in srgb,var(--divider) 55%,var(--card)) 50%,var(--divider) 70%);
   background-size:220% 100%;animation:shimmer 1.3s linear infinite}
+/* 骨架卡片：比纯色块更有结构感 */
+.skel{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
+.skel i{display:block;aspect-ratio:1;border-radius:14px;background:
+  linear-gradient(100deg,var(--divider) 30%,color-mix(in srgb,var(--divider) 55%,var(--card)) 50%,var(--divider) 70%);
+  background-size:220% 100%;animation:shimmer 1.3s linear infinite}
 @keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
 
 /* 文件行 */
@@ -233,6 +310,34 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .filerow .fsub{font-size:11.5px;color:var(--text2);margin-top:1px}
 .filerow .fsize{font-size:12px;color:var(--text2);flex:none;font-variant-numeric:tabular-nums}
 
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:3px;font-size:13px;margin-bottom:14px}
+.crumbs a{color:var(--brand);cursor:pointer;text-decoration:none;padding:3px 7px;border-radius:7px}
+.crumbs a:hover{background:var(--brand-soft)}
+.crumbs .sep{color:var(--text2)}
+
+/* 拖拽上传 */
+.main.dropping{outline:2px dashed var(--brand);outline-offset:-8px;border-radius:14px;
+  background:var(--brand-soft)}
+.dropzone{position:fixed;inset:0;z-index:900;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--brand) 12%,transparent);pointer-events:none;
+  font-size:16px;font-weight:700;color:var(--brand)}
+
+/* 批量选择 */
+.pickbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;
+  border-radius:12px;background:var(--brand-soft);margin-bottom:12px}
+.pickbar .cnt{font-size:13px;font-weight:600;color:var(--brand)}
+.pickbar .cnt b{font-size:15px}
+.pickbox{width:20px;height:20px;flex:none;border-radius:6px;border:2px solid var(--divider);
+  cursor:pointer;display:grid;place-items:center;transition:background .14s,border-color .14s}
+.pickbox:hover{border-color:var(--brand)}
+.pickbox.on{background:var(--brand);border-color:var(--brand)}
+.pickbox.on::after{content:"";width:9px;height:5px;border-left:2px solid #fff;
+  border-bottom:2px solid #fff;transform:rotate(-45deg) translateY(-1px)}
+.filerow.picked{background:var(--brand-soft);border-radius:10px}
+.ph.picked{box-shadow:0 0 0 3px var(--brand),var(--sh-2)}
+.ph .pickbox{position:absolute;top:6px;left:6px;z-index:3}
+.filerow.picked .fname{color:var(--brand);font-weight:600}
+
 /* 文件操作：磁贴上的 ⋯ 与操作菜单 */
 .phmenu{position:absolute;top:6px;right:6px;min-height:30px;padding:2px 9px;font-size:15px;
   border-radius:9px;background:rgba(0,0,0,.55);color:#fff;border:0;opacity:0;
@@ -241,10 +346,6 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .menu{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .menu button{width:100%;text-align:left;justify-content:flex-start;gap:9px}
 .menu button.danger{color:var(--danger);border-color:var(--danger-soft)}
-.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:3px;font-size:13px;margin-bottom:14px}
-.crumbs a{color:var(--brand);cursor:pointer;text-decoration:none;padding:3px 7px;border-radius:7px}
-.crumbs a:hover{background:var(--brand-soft)}
-.crumbs .sep{color:var(--text2)}
 
 /* ========== 大图查看器 ========== */
 .viewer{position:fixed;inset:0;z-index:999;background:rgba(10,14,20,.94);
@@ -269,7 +370,8 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .modal{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;
   background:rgba(10,14,20,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
   animation:vfade .2s ease both;padding:18px}
-.mbox{width:100%;max-width:420px;max-height:88vh;overflow:auto;background:var(--card);
+.mbox{width:100%;max-width:420px;max-height:88vh;overflow:auto;
+  background:color-mix(in srgb,var(--card) 95%,transparent);
   border-radius:20px;box-shadow:0 24px 60px rgba(10,14,20,.35);padding:24px;
   animation:mup .26s cubic-bezier(.22,1,.36,1) both}
 @keyframes mup{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
@@ -278,7 +380,8 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .field{margin-bottom:14px}
 .field label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px}
 .field input,.field select{width:100%;padding:11px 13px;border-radius:11px;font-size:14px;
-  border:1px solid var(--divider);background:var(--bg);color:var(--text);font-family:var(--font-body)}
+  border:1px solid var(--divider);
+  background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--text);font-family:var(--font-body)}
 .field input:focus,.field select:focus{outline:none;border-color:var(--brand);
   box-shadow:0 0 0 3px var(--brand-soft)}
 .merr{background:var(--danger-soft);color:var(--danger);font-size:12.5px;font-weight:500;
@@ -293,7 +396,8 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 
 /* ========== 用户 ========== */
 .users{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
-.ucard{background:var(--card);border-radius:14px;box-shadow:var(--sh-1),var(--ring);
+.ucard{border-radius:14px;box-shadow:var(--sh-1),var(--ring);
+  background:color-mix(in srgb,var(--card) calc(var(--surface-alpha)*100%),transparent);
   padding:15px;display:flex;gap:12px;align-items:center}
 .ucard .uav{width:40px;height:40px;flex:none;border-radius:50%;display:grid;place-items:center;
   background:var(--brand-soft);color:var(--brand);font-size:15px;font-weight:700}
@@ -307,6 +411,8 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 /* ========== 其他 ========== */
 .slot{border:1.5px dashed var(--divider);border-radius:15px;padding:28px 18px;text-align:center;
   color:var(--text2);font-size:13px}
+.slot .em{display:block;font-size:34px;margin-bottom:10px;opacity:.55}
+.slot .tip{display:block;margin-top:6px;font-size:12px;opacity:.8}
 .slot.sm{padding:18px 14px}
 .note{font-size:12px;color:var(--text2);margin-top:12px;line-height:1.6}
 .err{background:var(--danger-soft);color:var(--danger);border-radius:12px;padding:12px 14px;
@@ -336,7 +442,7 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
   .nav button:hover{transform:none}
   .nav button.active{box-shadow:none}
   .nav button .ico{font-size:19px}
-  .main{padding:14px 13px calc(88px + env(safe-area-inset-bottom))}
+  .main{padding:14px 13px calc(92px + env(safe-area-inset-bottom))}
   h2.view-title,.vhead h2{font-size:18px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
   .grid.kpi{grid-template-columns:repeat(2,1fr);gap:10px}
@@ -356,7 +462,9 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
   .mbox{max-width:none;border-radius:20px 20px 0 0;max-height:92vh;
     padding-bottom:calc(24px + env(safe-area-inset-bottom))}
   .viewer .nav{width:40px;height:40px}
+  .searchbar{flex-wrap:wrap}
 }
+
 `;
 
 /* ===================== 工具 ===================== */
@@ -389,6 +497,205 @@ const maskSn = (sn) => {
 
 /* ===================== 状态 ===================== */
 const PH = { path: "/file/", space: "user", data: null, upload: null };
+const TASK = { src: "filesvc", data: null, err: "", counts: {} };
+
+/* ============ 重复照片扫描 ============ */
+const DUP = { taskId: null, res: null, busy: false, err: "" };
+
+/* ============ 设备诊断（错误码 / 维修模式 / Samba）============ */
+const DIAG = { res: null, busy: false, err: "" };
+
+function renderDiag() {
+  if (DIAG.err) return `<div class="err">${esc(DIAG.err)}</div>`;
+  if (DIAG.busy) return `<div class="slot sm">读取诊断信息…</div>`;
+  if (!DIAG.res) return `<div class="slot sm">点「读取诊断」查看设备错误码、维修模式与共享状态</div>`;
+  // 真实返回：{ ok, result: { dev_err_code:{data:{devErr,errorCode}}, repair_mode:{data:{mode}},
+  //   samba_public:{Smb1Enable,...}, samba_user:{...} } }
+  const r = DIAG.res || {};
+  const body = r.result || r || {};
+  const dec = (body.dev_err_code || {}).data || {};
+  const rep = (body.repair_mode || {}).data || {};
+  const sp = body.samba_public || {};
+  const su = body.samba_user || {};
+  const onOff = (v) => (v == null ? "" : (v ? "开启" : "关闭"));
+  const rows = [
+    ["设备错误码 devErr", dec.devErr != null ? dec.devErr : ""],
+    ["错误码 errorCode", dec.errorCode != null ? dec.errorCode : ""],
+    ["维修模式", rep.mode != null ? (rep.mode === 0 ? "关闭" : "开启(" + rep.mode + ")") : ""],
+    ["SMB 匿名共享", sp.Smb1Enable != null ? onOff(sp.Smb1Enable) : (sp.Enable != null ? onOff(sp.Enable) : "")],
+    ["SMB 账号共享", su.Smb1Enable != null ? onOff(su.Smb1Enable) : (su.Enable != null ? onOff(su.Enable) : "")],
+  ].filter(([, v]) => v !== "" && v != null);
+  if (!rows.length) return `<div class="slot sm">未返回可展示字段</div>`;
+  return `<div class="card">
+    <div class="card-h">诊断<span class="hint">排障用</span></div>
+    ${rows.map(([k, v]) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${esc(String(v))}</span></div>`).join("")}
+  </div>`;
+}
+
+async function diagLoad() {
+  const panel = window.__hs_panel;
+  DIAG.busy = true; DIAG.err = "";
+  if (panel) panel._draw();
+  try {
+    DIAG.res = await svc("device_diagnostics", {});
+  } catch (e) { DIAG.err = String(e.message || e); }
+  DIAG.busy = false;
+  if (panel) panel._draw();
+}
+
+function renderDup() {
+  if (DUP.err) return `<div class="err">${esc(DUP.err)}</div>`;
+  if (DUP.busy) return `<div class="slot sm">扫描中…（设备侧异步，可稍后点「查看结果」）</div>`;
+  if (!DUP.res) return `<div class="slot">点「扫描重复照片」开始；扫描是设备侧异步任务，
+    开始后点「查看结果」取最新结果。</div>`;
+  // 真实返回：{ ok, result: { data: { fileInfo:[{path,lcdPath,hash,size,result,...}], code, hasMore,
+  //   mergeCount, mergeTotal } } }
+  const body = (DUP.res || {}).result || DUP.res || {};
+  const data = body.data || body || {};
+  const list = data.fileInfo || data.files || [];
+  const total = data.mergeCount || data.mergeTotal || list.length;
+  if (!list.length) return `<div class="slot">暂无重复照片结果（可能仍在扫描）</div>`;
+  const base = "/api/huawei_home_storage/image/" + (window.__hs_entry_id || "") + "/";
+  return `<div class="card">
+    <div class="card-h">重复照片<span class="hint">${list.length} 项 · 合并计数 ${total}</span></div>
+    <div class="phgrid">
+      ${list.slice(0, 60).map((f) => {
+        const thumb = f.lcdPath || f.path || "";
+        return `<div class="ph" data-act="file-open"
+          data-url="${esc(thumb ? base + "thumb" + thumb : "")}">
+          ${thumb ? `<img data-src="${esc(base + "thumb" + thumb)}" alt="" style="opacity:0">`
+                  : `<div class="sk"></div>`}
+          <span class="cap">${esc(String(f.path || "").split("/").pop() || "")}</span>
+        </div>`;
+      }).join("")}
+    </div>
+    ${data.hasMore ? '<div class="note">还有更多，结果按 limit 截断</div>' : ""}
+  </div>`;
+}
+
+async function dupStart() {
+  const panel = window.__hs_panel;
+  DUP.busy = true; DUP.err = ""; DUP.res = null;
+  if (panel) panel._draw();
+  try {
+    const r = await svc("duplicate_scan", { act: "start" });
+    // 返回 { act, result: { data: { taskId } } } —— taskId 用于查结果
+    const data = (r && r.result && r.result.data) || r || {};
+    DUP.taskId = data.taskId || data.task_id || null;
+    toast(DUP.taskId ? "扫描已启动（taskId " + DUP.taskId + "）" : "扫描已启动");
+  } catch (e) { DUP.err = String(e.message || e); }
+  DUP.busy = false;
+  if (panel) panel._draw();
+}
+
+async function dupResult() {
+  const panel = window.__hs_panel;
+  if (!DUP.taskId) { toast("请先启动扫描"); return; }
+  DUP.busy = true; DUP.err = "";
+  if (panel) panel._draw();
+  try {
+    DUP.res = await svc("duplicate_scan_result", { task_id: DUP.taskId, limit: 100 });
+  } catch (e) { DUP.err = String(e.message || e); }
+  DUP.busy = false;
+  if (panel) panel._draw();
+}
+
+/* ============ 批量选择（多选后批量操作）============ */
+const PICK = { on: false, set: new Set(), base: "/file/" };
+
+function pickCount() { return PICK.set.size; }
+
+function togglePick(path) {
+  if (PICK.set.has(path)) PICK.set.delete(path); else PICK.set.add(path);
+  return PICK.set.size;
+}
+
+function pickToggleBar() {
+  // 顶部工具条：进入/退出多选模式 + 批量操作
+  if (!PICK.on) {
+    return `<div class="actions" style="margin-bottom:12px">
+      <button class="btn sm" data-act="pick-on">批量选择</button>
+    </div>`;
+  }
+  const n = pickCount();
+  return `<div class="pickbar">
+    <span class="cnt">已选 <b>${n}</b> 项</span>
+    <button class="btn sm" data-act="pick-all">全选</button>
+    <button class="btn sm" data-act="pick-none">取消全选</button>
+    <span class="spacer" style="flex:1"></span>
+    <button class="btn sm" data-act="pick-move" ${n ? "" : "disabled"}>移动</button>
+    <button class="btn sm" data-act="pick-copy" ${n ? "" : "disabled"}>复制</button>
+    <button class="btn sm danger" data-act="pick-del" ${n ? "" : "disabled"}>删除</button>
+    <button class="btn sm" data-act="pick-off">退出</button>
+  </div>`;
+}
+
+async function pickRun(op) {
+  const ids = [...PICK.set];
+  if (!ids.length) { toast("请先选择文件"); return; }
+  const label = op === "move" ? "移动" : op === "copy" ? "复制" : "删除";
+  if (op === "delete") {
+    if (!window.confirm("删除选中的 " + ids.length + " 项？\n\n会移入设备回收站，可恢复。")) return;
+  } else {
+    const dest = window.prompt("目标文件夹（需以 /file/ 开头且已存在）：", PICK.base);
+    if (!dest) return;
+    try {
+      await svc(op === "move" ? "move_paths" : "copy_paths",
+                { paths: ids, dest_dir: dest, category: curSpace() });
+      toast("已" + label + " " + ids.length + " 项");
+      PICK.on = false; PICK.set.clear();
+      loadFiles();
+    } catch (e) { toast(label + "失败：" + String(e.message || e)); }
+    return;
+  }
+  try {
+    await svc("delete_paths", { paths: ids, category: curSpace() });
+    toast("已删除（进回收站）" + ids.length + " 项");
+    PICK.on = false; PICK.set.clear();
+    loadFiles();
+  } catch (e) { toast("删除失败：" + String(e.message || e)); }
+}
+const SRC = { kw: "", res: null, busy: false, err: "" };
+
+/* ============ 皮肤 ============ */
+const SKINS = [
+  { key: "native",   icon: "◐", title: "跟随 HA 主题" },
+  { key: "aurora",   icon: "◍", title: "极光（玻璃·青蓝）" },
+  { key: "midnight", icon: "◑", title: "墨夜（深色·霓虹）" },
+  { key: "sand",     icon: "◒", title: "暖砂（浅色暖调）" },
+  { key: "forest",   icon: "◓", title: "森屿（自然青绿）" },
+];
+const SKIN_KEY = "huawei_storage_skin";
+let CUR_SKIN = "native";
+try { CUR_SKIN = localStorage.getItem(SKIN_KEY) || "native"; } catch (e) { CUR_SKIN = "native"; }
+
+function applySkin(key) {
+  CUR_SKIN = key;
+  try { localStorage.setItem(SKIN_KEY, key); } catch (e) { /* 隐私模式下忽略 */ }
+  const host = document.querySelector("huawei-storage-panel");
+  if (!host) return;
+  if (key === "native") host.removeAttribute("data-skin");
+  else host.setAttribute("data-skin", key);
+}
+
+function renderSkinner() {
+  return `<div class="skinner" title="切换界面皮肤">
+    ${SKINS.map((x) => `<button data-act="skin" data-skin="${x.key}"
+      class="${x.key === CUR_SKIN ? "on" : ""}" title="${x.title}"
+      style="background:${skinSwatch(x.key)}">${x.icon}</button>`).join("")}
+  </div>`;
+}
+
+function skinSwatch(key) {
+  const map = {
+    native:   "linear-gradient(135deg,#e8eef5,#c8d4e2)",
+    aurora:   "linear-gradient(135deg,#29c2f0,#0e8fc4)",
+    midnight: "linear-gradient(135deg,#38d6f5,#1a2b3d)",
+    sand:     "linear-gradient(135deg,#e0a066,#c8763c)",
+    forest:   "linear-gradient(135deg,#57c48c,#2fa563)",
+  };
+  return map[key] || map.native;
+}
 const SEL = { entry: null, account: null };
 const ALB = { data: null, group: null, album: null, photos: [], next: null, loading: false, err: "" };
 
@@ -445,10 +752,12 @@ async function loadOneImage({ img, url }) {
       // 改为在 img 从 DOM 移除时统一释放（见 releaseImageBlob）。
       img.removeEventListener("load", onLoad);
     });
+    img.dataset.loaded = "1";
     img.src = blobUrl;
     img.style.opacity = "1";
   } catch (e) {
     img.style.opacity = ".25";
+    img.dataset.failed = "1";
   }
 }
 
@@ -480,6 +789,23 @@ function queueImages(root) {
     });
   }, { rootMargin: "300px" });
   imgs.forEach((im) => io.observe(im));
+
+  // 性能：离屏已加载的图释放 src（保留占位），避免大相册无限增长内存。
+  // 只处理**不在可视区**的已加载图，且仍在 DOM 中的才回收。
+  if (!root.querySelectorAll) return;
+  const recycle = new IntersectionObserver((ents) => {
+    ents.forEach((en) => {
+      const img = en.target;
+      if (en.isIntersecting) return;
+      // 离屏且已加载 → 回收内存（再次进入可视区会重新触发 data-src 加载）
+      if (img.dataset.loaded === "1" && img.dataset.src) {
+        releaseImageBlob(img);
+        img.removeAttribute("src");
+        img.dataset.loaded = "0";
+      }
+    });
+  }, { rootMargin: "0px", threshold: 0 });
+  root.querySelectorAll("img[data-src]").forEach((im) => recycle.observe(im));
 }
 
 /* ===================== 视图 ===================== */
@@ -523,13 +849,18 @@ function renderOverview(d) {
         <div class="lab">智能相册</div><div class="val">${albums || "—"}</div></div></div>
     </div>
 
+    ${(c.duplicate_photos || DUP.taskId || DUP.res) ? `<div class="card" style="margin-top:var(--gap)">
+      <div class="card-h">重复照片
+        <span class="hint">${c.duplicate_photos != null ? c.duplicate_photos + " 张" : ""}</span></div>
+      ${renderDup()}
+    </div>` : ""}
     <div class="card" style="margin-top:var(--gap)">
       <div class="card-h">⚡ 快捷操作</div>
       <div class="actions">
         <button class="btn pri" data-act="go-albums">🖼️ 浏览相册</button>
         <button class="btn" data-act="go-files">📁 浏览文件</button>
         <button class="btn" data-act="refresh">🔄 刷新凭据</button>
-        <button class="btn" data-act="dup">🔍 扫描重复照片</button>
+        <button class="btn" data-act="dup">扫描重复照片</button>
       </div>
     </div>`;
 }
@@ -585,6 +916,37 @@ function renderAlbums(d) {
     </div>` : `<div class="slot">该分类暂无相册</div>`}`;
 }
 
+/* ---------- 相册操作（用新服务 add_to_album / share_to_person）---------- */
+async function albumAddTo(albumId, albumType, fileIds, albumName) {
+  // ⚠️ file_ids 必须是**相册域的 fileId**（不是文件空间的 fid）
+  try {
+    await svc("add_to_album", {
+      album_id: Number(albumId),
+      album_type: Number(albumType),
+      file_ids: fileIds,
+      album_name: albumName || "",
+    });
+    toast("已加入相册 " + (fileIds.length || 0) + " 项");
+  } catch (e) {
+    toast("加入相册失败：" + String(e.message || e));
+  }
+}
+
+async function albumShareToPerson(albumId, ownerId, fileIds, albumName) {
+  try {
+    await svc("share_to_person", {
+      album_id: Number(albumId),
+      album_type: 23,          // 人物相册
+      owner_id: String(ownerId),
+      file_ids: fileIds,
+      album_name: albumName || "",
+    });
+    toast("已共享到人物相册");
+  } catch (e) {
+    toast("共享失败：" + String(e.message || e));
+  }
+}
+
 function renderAlbumDetail() {
   const a = ALB.album;
   const photos = ALB.photos || [];
@@ -595,6 +957,7 @@ function renderAlbumDetail() {
       <span class="sub">已载入 ${photos.length} 张</span>
     </div>
     ${ALB.err ? `<div class="err">${esc(ALB.err)}</div>` : ""}
+    ${pickToggleBar()}
     ${photos.length ? `<div class="phgrid">
       ${photos.map((p, i) => `
         <div class="ph" data-act="photo-open" data-idx="${i}">
@@ -674,6 +1037,7 @@ function renderFiles(d) {
         <button class="btn sm pri" data-act="fs-upload">⬆ 上传文件</button>
         <input type="file" id="fsFile" style="display:none">` : ""}
     </div>
+    ${pickToggleBar()}
     ${PH.upload ? `<div class="card" style="padding:12px 16px">
       <div style="display:flex;align-items:center;gap:10px;font-size:12.5px">
         <b>${esc(PH.upload.name)}</b>
@@ -743,36 +1107,51 @@ function renderFileList(res) {
     ${crumbsHtml(base)}
     ${dirs.length ? `<div class="card">
       <div class="card-h">📁 文件夹<span class="hint">${dirs.length} 个</span></div>
-      ${dirs.map((f) => `<div class="filerow dir" data-act="fs-go"
-          data-path="${esc(base + f.name)}/">
+      ${dirs.map((f) => {
+        const pth = base + f.name + "/";
+        const on = PICK.set.has(pth);
+        return `<div class="filerow dir ${on ? "picked" : ""}" data-act="fs-go"
+          data-path="${esc(pth)}">
+        ${PICK.on ? `<span class="pickbox ${on ? "on" : ""}" data-act="pick" data-path="${esc(pth)}"></span>` : ""}
         <span class="fico">📁</span>
         <span class="fmain"><span class="fname">${esc(f.name)}</span></span>
         <button class="btn sm" data-act="row-menu" data-name="${esc(f.name)}"
-          data-path="${esc(base + f.name)}/" data-dir="1">⋯</button>
-        <span class="fsize">›</span></div>`).join("")}
+          data-path="${esc(pth)}" data-dir="1">⋯</button>
+        <span class="fsize">›</span></div>`;
+      }).join("")}
     </div>` : ""}
     ${imgs.length ? `<div class="card">
       <div class="card-h">🖼️ 图片<span class="hint">${imgs.length} 张</span></div>
       <div class="phgrid">
-        ${imgs.map((f) => `<div class="ph" data-act="file-open"
+        ${imgs.map((f) => {
+          const pth = base + f.name;
+          const on = PICK.set.has(pth);
+          return `<div class="ph ${on ? "picked" : ""}" data-act="file-open"
             data-url="${esc(f.thumbUrl || "")}" data-name="${esc(f.name)}">
+          ${PICK.on ? `<span class="pickbox ${on ? "on" : ""}" data-act="pick" data-path="${esc(pth)}"></span>` : ""}
           ${f.thumbUrl ? `<img data-src="${esc(f.thumbUrl)}" alt="" style="opacity:0">`
                        : `<div class="sk"></div>`}
           <span class="cap">${esc(f.name)}</span>
           <button class="btn sm phmenu" data-act="row-menu" data-name="${esc(f.name)}"
-            data-path="${esc(base + f.name)}" data-dir="0">⋯</button></div>`).join("")}
+            data-path="${esc(pth)}" data-dir="0">⋯</button></div>`;
+        }).join("")}
       </div>
     </div>` : ""}
     ${plain.length ? `<div class="card">
       <div class="card-h">📄 其他文件<span class="hint">${plain.length} 个 · ${fmtSize(
         plain.reduce((s, f) => s + (f.size || 0), 0))}</span></div>
-      ${plain.map((f) => `<div class="filerow">
+      ${plain.map((f) => {
+        const pth = base + f.name;
+        const on = PICK.set.has(pth);
+        return `<div class="filerow ${on ? "picked" : ""}">
+        ${PICK.on ? `<span class="pickbox ${on ? "on" : ""}" data-act="pick" data-path="${esc(pth)}"></span>` : ""}
         <span class="fico">📄</span>
         <span class="fmain"><span class="fname">${esc(f.name)}</span>
           <span class="fsub">${esc(fmtDate(f.mtime))}</span></span>
         <span class="fsize">${fmtSize(f.size)}</span>
         <button class="btn sm" data-act="row-menu" data-name="${esc(f.name)}"
-          data-path="${esc(base + f.name)}" data-dir="0">⋯</button></div>`).join("")}
+          data-path="${esc(pth)}" data-dir="0">⋯</button></div>`;
+      }).join("")}
     </div>` : ""}
     ${!dirs.length && !others.length ? `<div class="slot">此目录为空</div>` : ""}`;
 }
@@ -781,15 +1160,44 @@ function renderRecycle(res) {
   const items = res.items || [];
   if (!items.length) return `<div class="slot">最近删除是空的</div>`;
   return `<div class="card">
-    <div class="card-h">🗑️ 最近删除<span class="hint">${res.count} 项</span></div>
-    ${items.map((it) => `<div class="filerow">
-      <span class="fico">🗑️</span>
+    <div class="card-h">最近删除<span class="hint">${res.count} 项</span></div>
+    ${pickToggleBar()}
+    ${items.map((it) => {
+      const on = PICK.set.has(String(it.rid));
+      return `<div class="filerow ${on ? "picked" : ""}">
+      ${PICK.on ? `<span class="pickbox ${on ? "on" : ""}" data-act="pick" data-path="${esc(String(it.rid))}"></span>` : ""}
+      <span class="fico">[bin]</span>
       <span class="fmain"><span class="fname">${esc(it.name)}</span>
-        <span class="fsub">${esc(fmtDate(it.mtime))}</span></span>
+        <span class="fsub">${esc(fmtDate(it.dtime || it.mtime))}${it.path ? " · " + esc(it.path) : ""}</span></span>
       <span class="fsize">${esc(String(it.path || "").split("/").filter(Boolean).slice(-2, -1)[0] || "")}</span>
-    </div>`).join("")}
-    <div class="note">恢复或彻底删除请到「媒体 → 华为家庭存储 → 最近删除」操作。</div>
+      <button class="btn sm" data-act="recover" data-rid="${esc(String(it.rid))}"
+        data-name="${esc(it.name)}">恢复</button>
+    </div>`;
+    }).join("")}
+    <div class="actions" style="margin-top:14px">
+      <button class="btn pri" data-act="recover-picked" ${pickCount() ? "" : "disabled"}>
+        恢复选中（${pickCount()}）
+      </button>
+    </div>
+    <div class="note">恢复后文件回到原来的位置。设备侧不提供「彻底删除」，
+      只能移入回收站 —— 想清空请在设备 App 的回收站里操作。</div>
   </div>`;
+}
+
+/** 恢复回收站条目（rid 是设备侧主键，比按名字匹配可靠）。 */
+async function recoverItems(rids, label) {
+  if (!rids.length) { toast("请先选择要恢复的条目"); return; }
+  if (!window.confirm("恢复" + label + "？\n\n文件会回到原来的位置。")) return;
+  let ok = 0, fail = 0;
+  for (const rid of rids) {
+    try {
+      await svc("recover_recycle", { rid: rid, category: curSpace() });
+      ok++;
+    } catch (e) { fail++; }
+  }
+  toast(fail ? "恢复完成：成功 " + ok + "，失败 " + fail : "已恢复 " + ok + " 项");
+  PICK.on = false; PICK.set.clear();
+  loadFiles();
 }
 
 
@@ -931,10 +1339,38 @@ function pickAndUpload() {
   if (!input) return;
   input.value = "";
   input.onchange = () => {
-    const f = input.files && input.files[0];
-    if (f) doUpload(f);
+    const fs = input.files || [];
+    // 支持多选：逐个排队上传（并发受限，不会打爆设备会话）
+    for (const f of fs) doUpload(f);
   };
+  input.multiple = true;
   input.click();
+}
+
+/* ---- 拖拽上传：把文件拖到文件页即可 ---- */
+function initDnd(panel) {
+  const main = panel && panel.shadowRoot.querySelector(".main");
+  if (!main || main.dataset.dnd) return;
+  main.dataset.dnd = "1";
+  const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+  ["dragenter", "dragover"].forEach((ev) => main.addEventListener(ev, (e) => {
+    stop(e);
+    if (PH.space === "recycle") return;
+    main.classList.add("dropping");
+  }));
+  ["dragleave", "dragend"].forEach((ev) => main.addEventListener(ev, (e) => {
+    stop(e);
+    if (!main.contains(e.relatedTarget)) main.classList.remove("dropping");
+  }));
+  main.addEventListener("drop", (e) => {
+    stop(e);
+    main.classList.remove("dropping");
+    if (PH.space === "recycle") { toast("回收站不能上传"); return; }
+    const fs = (e.dataTransfer && e.dataTransfer.files) || [];
+    if (!fs.length) return;
+    toast("上传 " + fs.length + " 个文件…");
+    for (const f of fs) doUpload(f);
+  });
 }
 
 async function doUpload(file) {
@@ -992,6 +1428,193 @@ async function doUpload(file) {
   } catch (e) {
     finish(false, "上传失败：" + String(e.message || e));
   }
+}
+
+/* ---------- 配置（只读总览 + 跳 HA 原生配置）---------- */
+function renderConfig(d) {
+  const e = d || {};
+  const bdir = e.backup_dir || "/file/HomeAssistant/";
+  const bspace = e.backup_space || "user";
+  return `
+    <div class="vhead"><h2>配置</h2>
+      <span class="sub">当前生效的设置</span></div>
+
+    <div class="card">
+      <div class="card-h">💾 备份目标<span class="hint">由 backup.py 读取</span></div>
+      <div class="row"><span class="k">备份目录</span><span class="v">${esc(bdir)}</span></div>
+      <div class="row"><span class="k">所在空间</span><span class="v">${bspace === "public" ? "共享" : "我的文件"}</span></div>
+      <div class="note">
+        备份会存到这里，每个备份由 <code>.tar</code> 本体与
+        <code>.ha-backup.json</code> 边车元数据组成。删除走设备回收站（可逆）。
+      </div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn" data-act="open-ha-config">在 HA 中修改</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">🔐 账号<span class="hint">${(d.accounts || []).length} 个</span></div>
+      ${(d.accounts || []).map((a) => `<div class="row">
+        <span class="k">${esc(a.label || "账号")}${a.is_primary ? "（主）" : ""}</span>
+        <span class="v">${a.counts && a.counts.photos != null ? a.counts.photos + " 张照片" : ""}</span>
+      </div>`).join("") || '<div class="slot sm">无账号信息</div>'}
+      <div class="actions" style="margin-top:14px">
+        <button class="btn" data-act="open-ha-config">管理账号 / 重新登录</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">🧭 面板设置</div>
+      <div class="row"><span class="k">界面皮肤</span><span class="v">${esc(
+        (SKINS.find((x) => x.key === CUR_SKIN) || {}).title || CUR_SKIN
+      )}</span></div>
+      <div class="note">皮肤用右上角切换器改，会记住选择。</div>
+    </div>`;
+}
+
+/* ---------- 任务（文件 / 跨服务 / 相册）---------- */
+const TASK_SOURCES = [
+  { key: "filesvc", title: "文件空间" },
+  { key: "trans",   title: "跨服务传输" },
+  { key: "gallery", title: "相册" },
+];
+
+function renderTasks() {
+  return `
+    <div class="vhead"><h2>任务</h2>
+      <span class="sub">${TASK.data ? "共 " + (TASK.data.tasks || []).length + " 条" : ""}</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn sm" data-act="task-reload">刷新</button>
+    </div>
+    <div class="segs" style="margin-bottom:16px">
+      ${TASK_SOURCES.map((x) => `<span class="seg ${x.key === TASK.src ? "on" : ""}"
+        data-act="task-src" data-src="${x.key}">${esc(x.title)}
+        ${TASK.counts[x.key] != null ? `<span class="n">${TASK.counts[x.key]}</span>` : ""}
+      </span>`).join("")}
+    </div>
+    ${renderTaskBody()}`;
+}
+
+function renderTaskBody() {
+  if (TASK.err) return `<div class="err">${esc(TASK.err)}</div>`;
+  if (!TASK.data) return `<div class="slot sm">载入中…</div>`;
+  const list = TASK.data.tasks || [];
+  if (!list.length) return `<div class="slot">该来源当前没有任务</div>`;
+  const title = (TASK_SOURCES.find((x) => x.key === TASK.src) || {}).title || "任务";
+  return `<div class="card">
+    <div class="card-h">${esc(title)}<span class="hint">${list.length} 条</span></div>
+    ${list.map((t) => {
+      const pct = taskPct(t);
+      const failed = taskFailed(t);
+      return `<div class="filerow" style="align-items:flex-start">
+        <span class="fico">${failed ? "!" : pct >= 100 ? "OK" : "..."}</span>
+        <span class="fmain">
+          <span class="fname">${esc(t.originObjectName || t.transId || "任务")}</span>
+          <span class="fsub">${esc(fmtDate(t.taskBeginTime))}${t.destination ? " -> " + esc(t.destination) : ""}</span>
+          <div class="bar ${failed ? "danger" : ""}"><i style="width:${pct}%"></i></div>
+        </span>
+        <span class="fsize">${pct}%</span>
+        <button class="btn sm" data-act="task-clean" data-id="${esc(t.taskId)}">清除</button>
+      </div>`;
+    }).join("")}
+    <div class="actions" style="margin-top:14px">
+      <button class="btn danger" data-act="task-clean-all">清除本来源全部记录</button>
+    </div>
+  </div>`;
+}
+
+function taskPct(t) {
+  const raw = Number(t.progress);
+  if (t.progress !== "" && t.progress != null && !isNaN(raw)) {
+    return Math.max(0, Math.min(100, Math.round(raw)));
+  }
+  const sum = Number(t.sumNum || t.sumSize || 0);
+  const fin = Number(t.finishedNum || t.finishedSize || 0);
+  if (!sum) return 0;
+  return Math.max(0, Math.min(100, Math.round((fin / sum) * 100)));
+}
+
+function taskFailed(t) {
+  const info = String(t.errorInfo || "");
+  return info.includes("'err'") && !info.includes("'err': 0");
+}
+
+async function loadTasks() {
+  const panel = window.__hs_panel;
+  TASK.err = "";
+  if (!TASK.data && panel) panel._draw();
+  try {
+    const res = await svc("task_status", { service: TASK.src });
+    TASK.data = res || { tasks: [] };
+    TASK.counts[TASK.src] = (TASK.data.tasks || []).length;
+  } catch (e) {
+    TASK.err = String(e.message || e);
+  }
+  if (panel && panel._view === "tasks") panel._draw();
+}
+
+async function cleanTasks(ids, label) {
+  if (!ids.length) return;
+  if (!window.confirm("清除" + label + "？\n\n这只删除设备的任务历史记录，不影响已传输的文件。")) return;
+  try {
+    const res = await svc("clean_task_records", { task_ids: ids });
+    const failed = (res && res.failed_ids) || [];
+    toast(failed.length ? "清除完成，" + failed.length + " 条失败" : "已清除 " + ids.length + " 条记录");
+    TASK.data = null;
+    await loadTasks();
+  } catch (e) {
+    toast("清除失败：" + String(e.message || e));
+  }
+}
+
+/* ---------- 搜索（文件空间）---------- */
+function renderSearch() {
+  return `
+    <div class="vhead"><h2>搜索</h2>
+      <span class="sub">按关键字查找文件空间</span></div>
+    <div class="searchbar">
+      <input id="kwInput" type="text" placeholder="输入关键字后回车"
+        value="${esc(SRC.kw)}" autocomplete="off">
+      <button class="btn pri" data-act="search-go">搜索</button>
+    </div>
+    ${renderSearchBody()}`;
+}
+
+function renderSearchBody() {
+  if (SRC.err) return `<div class="err">${esc(SRC.err)}</div>`;
+  if (SRC.busy) return `<div class="slot sm">搜索中…</div>`;
+  if (!SRC.res) return `<div class="slot">输入关键字开始搜索</div>`;
+  const list = SRC.res.files || SRC.res.items || [];
+  if (!list.length) return `<div class="slot">没有匹配「${esc(SRC.kw)}」的文件</div>`;
+  const base = "/file/";
+  return `<div class="card">
+    <div class="card-h">结果<span class="hint">${list.length} 项</span></div>
+    ${list.map((f) => `<div class="filerow">
+      <span class="fico">${f.type === 8 ? "#" : "D"}</span>
+      <span class="fmain">
+        <span class="fname">${esc(f.name || f.fileName || "")}</span>
+        <span class="fsub">${esc(f.path || f.dirPath || "")}</span>
+      </span>
+      <span class="fsize">${f.size ? fmtSize(f.size) : ""}</span>
+    </div>`).join("")}
+  </div>`;
+}
+
+async function doSearch() {
+  const panel = window.__hs_panel;
+  const box = panel && panel.shadowRoot.getElementById("kwInput");
+  if (!box) return;
+  SRC.kw = box.value.trim();
+  if (!SRC.kw) { toast("请输入关键字"); return; }
+  SRC.busy = true; SRC.err = ""; SRC.res = null;
+  if (panel) panel._draw();
+  try {
+    SRC.res = await svc("search_files", { keyword: SRC.kw, limit: 100 });
+  } catch (e) {
+    SRC.err = String(e.message || e);
+  }
+  SRC.busy = false;
+  if (panel && panel._view === "search") panel._draw();
 }
 
 /* ---------- 设备 ----------
@@ -1056,10 +1679,13 @@ function renderDevice(d) {
       ])}
     </div>
 
+    ${renderDiag()}
     <div class="card">
-      <div class="card-h">⚙️ 设备操作</div>
+      <div class="card-h">设备操作</div>
       <div class="actions">
-        <button class="btn" data-act="btn" data-which="sleep">😴 硬盘休眠</button>
+        <button class="btn" data-act="btn" data-which="sleep">
+
+        <button class="btn" data-act="diag">读取诊断</button>😴 硬盘休眠</button>
         <button class="btn" data-act="btn" data-which="eject">⏏️ 弹出 USB</button>
         <button class="btn danger" data-act="btn" data-which="reboot">🔄 重启设备</button>
       </div>
@@ -1138,6 +1764,16 @@ function openViewer(list, index) {
     const p = list[i] || {};
     title.textContent = list.length > 1 ? `${i + 1} / ${list.length}` : "";
     meta.textContent = [fmtDate(p.mtime), p.size ? fmtSize(p.size) : ""].filter(Boolean).join(" · ");
+    // 用 photo_info 补齐元数据（含 hdcFilePath 原图路径）—— 失败就保持基础信息
+    if (p.fileId && !p._metaDone) {
+      p._metaDone = true;
+      svc("photo_info", { file_ids: [p.fileId] }).then((info) => {
+        const one = (info && (info.photos || info.items || [])[0]) || info || {};
+        const extra = [one.hdcFilePath ? "原图" : "", one.width && one.height ? one.width + "x" + one.height : "",
+                       one.mime || ""].filter(Boolean).join(" · ");
+        if (extra) meta.textContent = [meta.textContent, extra].filter(Boolean).join(" · ");
+      }).catch(() => { /* 元数据取不到就只显示基础信息 */ });
+    }
     if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
     img.removeAttribute("src");
     img.alt = "载入中…";
@@ -1307,8 +1943,11 @@ const VIEWS = {
   overview: { icon: "📊", title: "概览", render: renderOverview, group: "浏览" },
   albums: { icon: "🖼️", title: "相册", render: renderAlbums, group: "浏览" },
   files: { icon: "📁", title: "文件", render: renderFiles, group: "浏览" },
+  search: { icon: "🔍", title: "搜索", render: renderSearch, group: "浏览" },
+  tasks: { icon: "📋", title: "任务", render: renderTasks, group: "管理" },
   device: { icon: "⚙️", title: "设备", render: renderDevice, group: "管理" },
   users: { icon: "👥", title: "用户", render: renderUsers, group: "管理" },
+  config: { icon: "\U0001F527", title: "配置", render: renderConfig, group: "管理" },
 };
 
 /* ===================== 组件 ===================== */
@@ -1340,6 +1979,7 @@ class HuaweiStoragePanel extends HTMLElement {
             <span>家庭存储<span class="sub" id="brandSub"></span></span></div>
           <div class="spacer"></div>
           <div class="accts" id="accts"></div>
+          ${renderSkinner()}
           <span class="pill" id="onlinePill"><i class="dot"></i><span>—</span></span>
         </header>
         <div class="body">
@@ -1348,7 +1988,31 @@ class HuaweiStoragePanel extends HTMLElement {
         </div>
       </div>`;
     this._renderNav();
+    applySkin(CUR_SKIN);
+    this._initKeys();
     if (this._hass) this._load();
+  }
+
+  /** 全局快捷键：Esc 关闭弹层，Ctrl/Cmd+K 跳搜索。 */
+  _initKeys() {
+    if (this._keys) return;
+    this._keys = true;
+    const sr = this.shadowRoot;
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        const v = sr.querySelector(".viewer");
+        if (v) { const c = v.querySelector("[data-close]"); if (c) c.click(); return; }
+        const m = sr.querySelector(".modal");
+        if (m) { const c = m.querySelector("[data-close]"); if (c) c.click(); }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        this._view = "search";
+        this._renderNav();
+        this._draw();
+        setTimeout(() => { const i = sr.getElementById("kwInput"); if (i) i.focus(); }, 80);
+      }
+    });
   }
 
   disconnectedCallback() {
@@ -1385,7 +2049,24 @@ class HuaweiStoragePanel extends HTMLElement {
     const d = Object.assign({}, this._entry() || {});
     d.counts = this._counts();
     d.current_account = this._account();
+    // 配置视图要展示备份目标：与 backend backup.py 的 _opts 读法保持一致
+    // （data 与 options 合并，options 优先）。
+    const ent = this._rawEntry();
+    if (ent) {
+      const merged = Object.assign({}, ent.data || {}, ent.options || {});
+      d.backup_dir = merged.backup_dir || "/file/HomeAssistant/";
+      d.backup_space = merged.backup_space || "user";
+    }
     return d;
+  }
+
+  /** 取原始 config entry（含 data/options）。 */
+  _rawEntry() {
+    const all = (this._status && this._status.entries) || [];
+    if (!all.length) return null;
+    const eid = SEL.entry || all[0].entry_id;
+    // 面板拿不到 hass.config_entries，改为从后端 status 携带（若后端未下发则降级）
+    return (all.find((e) => e.entry_id === eid) || all[0]) || null;
   }
 
   /** silent=true 时只刷新顶栏状态，不重绘主视图。
@@ -1437,6 +2118,7 @@ class HuaweiStoragePanel extends HTMLElement {
       b.addEventListener("click", () => {
         this._view = b.dataset.view;
         if (this._view !== "albums") ALB.album = null;
+        if (this._view !== "tasks") TASK.data = null;
         this._renderNav();
         this._draw();
       });
@@ -1470,7 +2152,9 @@ class HuaweiStoragePanel extends HTMLElement {
         ALB.data = null;
         ALB.album = null;
         this._draw();
-        if (this._view === "files") loadFiles();
+        if (this._view === "files") { loadFiles(); initDnd(this); }
+        if (this._view === "tasks") loadTasks();
+        if (this._view === "search") {}
       });
     });
   }
@@ -1490,6 +2174,8 @@ class HuaweiStoragePanel extends HTMLElement {
     this._wire();
     queueImages(this._main());
     if (this._view === "files") loadFiles();
+    if (this._view === "tasks") loadTasks();
+    if (this._view === "search") {}
   }
 
   _wire(root) {
@@ -1505,7 +2191,7 @@ class HuaweiStoragePanel extends HTMLElement {
         } else if (act === "refresh") {
           await this._call("huawei_home_storage", "refresh_credentials");
         } else if (act === "dup") {
-          await this._call("huawei_home_storage", "duplicate_scan", { act: "start" });
+          dupStart();
         } else if (act === "alb-group") {
           ALB.group = el.dataset.key; this._draw();
         } else if (act === "alb-open") {
@@ -1514,6 +2200,70 @@ class HuaweiStoragePanel extends HTMLElement {
           ALB.album = null; this._draw();
         } else if (act === "alb-more") {
           loadAlbumPage(true);
+        } else if (act === "skin") {
+          e.stopPropagation();
+          applySkin(el.dataset.skin);
+          this.shadowRoot.querySelector(".skinner")?.remove();
+          const bar = this.shadowRoot.querySelector(".topbar");
+          if (bar) bar.insertAdjacentHTML("beforeend", "");
+          this._draw();
+        } else if (act === "task-src") {
+          TASK.src = el.dataset.src; TASK.data = null;
+          this._draw(); loadTasks();
+        } else if (act === "task-reload") {
+          TASK.data = null; this._draw(); loadTasks();
+        } else if (act === "task-clean") {
+          cleanTasks([el.dataset.id], "这条任务记录");
+        } else if (act === "task-clean-all") {
+          const ids = ((TASK.data && TASK.data.tasks) || []).map((t) => t.taskId);
+          cleanTasks(ids, "本来源全部 " + ids.length + " 条记录");
+        } else if (act === "search-go") {
+          doSearch();
+        } else if (act === "pick-on") {
+          PICK.on = true; PICK.set.clear(); PICK.base = PH.path;
+          this._draw();
+        } else if (act === "pick-off") {
+          PICK.on = false; PICK.set.clear();
+          this._draw();
+        } else if (act === "pick") {
+          e.stopPropagation();
+          togglePick(el.dataset.path);
+          this._draw();
+        } else if (act === "pick-all") {
+          const all = [...(PH.data && PH.data.files || [])].map((f) =>
+            PH.path + f.name + (f.type === 8 ? "" : "/"));
+          PICK.set = new Set(all);
+          this._draw();
+        } else if (act === "pick-none") {
+          PICK.set.clear();
+          this._draw();
+        } else if (act === "pick-move") { pickRun("move");
+        } else if (act === "pick-copy") { pickRun("copy");
+        } else if (act === "pick-del") { pickRun("delete");
+        } else if (act === "open-ha-config") {
+          // 跳到 HA 的集成配置页（options flow 在其中）
+          const eid = window.__hs_entry_id || "";
+          if (!eid) { toast("未获取到配置条目"); return; }
+          try {
+            const nav = document.querySelector("home-assistant");
+            const ha = nav && nav.hass;
+            if (ha && ha.auth && ha.auth.data) {
+              history.pushState({}, "", "/config/integrations/integration/huawei_home_storage");
+              window.dispatchEvent(new Event("location-changed"));
+            } else {
+              toast("请在 HA 界面中打开");
+            }
+          } catch (err) { toast("跳转失败：" + String(err.message || err)); }
+        } else if (act === "recover") {
+          recoverItems([el.dataset.rid], "「" + el.dataset.name + "」");
+        } else if (act === "recover-picked") {
+          recoverItems([...PICK.set], "选中的 " + pickCount() + " 项");
+        } else if (act === "dup") {
+          dupStart();
+        } else if (act === "dup-res") {
+          dupResult();
+        } else if (act === "diag") {
+          diagLoad();
         } else if (act === "photo-open") {
           openViewer(ALB.photos, Number(el.dataset.idx));
         } else if (act === "file-open") {
@@ -1529,6 +2279,7 @@ class HuaweiStoragePanel extends HTMLElement {
           // 点在行内的 ⋯ 上时不要跟着进目录
           if (e.target.closest('[data-act="row-menu"]')) return;
           PH.path = el.dataset.path;
+          if (PICK.on) { PICK.set.clear(); }
           loadFiles();
         } else if (act === "fs-mkdir") {
           openPrompt({
