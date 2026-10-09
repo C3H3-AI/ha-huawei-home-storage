@@ -200,6 +200,112 @@ clean_task_records:
         select:
           options: [user, public]
 
+list_albums:
+  name: 列相册
+  description: 列出相册。注意 album_type=0 不含 type=6（用户/共享相册），要全量请传 6
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      description: 0=分类相册；6=用户/共享相册
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+album_photos:
+  name: 相册照片
+  description: 列出相册内的照片（含路径与缩略图），支持游标分页
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+    num:
+      name: 每页条数
+      required: false
+      default: 500
+      selector: {number: {min: 1, max: 500}}
+    last_cre_time:
+      name: 分页游标（创建时间）
+      description: 首页传 0；下一页用上一页返回的 lastCreTime
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+    last_row_id:
+      name: 分页游标（行号）
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+list_trash:
+  name: 最近删除
+  description: 回收站查询（返回完整元数据，含原图路径）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    num:
+      name: 条数
+      required: false
+      default: 100
+      selector: {number: {min: 1, max: 500}}
+    offset:
+      name: 偏移
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+duplicate_scan_result:
+  name: 重复照片结果
+  description: 查询重复照片扫描的结果（需先调用 duplicate_scan 的 start）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    task_id:
+      name: 任务 ID
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+    limit:
+      name: 条数
+      required: false
+      default: 20
+      selector: {number: {min: 1, max: 200}}
+    offset:
+      name: 偏移
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+    filter:
+      name: 过滤
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+device_diagnostics:
+  name: 设备诊断
+  description: 一次性取回设备错误码、维修模式、Samba 共享状态（排障用）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
 get_task:
   name: 查单个任务
   description: 按 taskId 精确查一个任务的详情（与 task_status 的批量查询互补）

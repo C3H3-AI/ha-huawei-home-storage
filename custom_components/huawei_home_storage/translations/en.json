@@ -772,6 +772,82 @@
           "description": "One per file_id; may be omitted."
         }
       }
+    },
+    "list_albums": {
+      "name": "List albums",
+      "description": "List albums. Note album_type=0 excludes type=6 (user/shared albums).",
+      "fields": {
+        "album_type": {
+          "name": "Album type",
+          "description": "0 = smart albums; 6 = user/shared albums."
+        }
+      }
+    },
+    "album_photos": {
+      "name": "Album photos",
+      "description": "List photos in an album (with paths and thumbnails), cursor paging supported.",
+      "fields": {
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        },
+        "num": {
+          "name": "Page size",
+          "description": "Maximum photos to return."
+        },
+        "last_cre_time": {
+          "name": "Cursor",
+          "description": "0 for the first page; use lastCreTime for the next."
+        },
+        "last_row_id": {
+          "name": "Cursor",
+          "description": "0 for the first page; use lastRowId for the next."
+        }
+      }
+    },
+    "list_trash": {
+      "name": "Recently deleted",
+      "description": "Query the recycle bin (returns full metadata including original paths).",
+      "fields": {
+        "num": {
+          "name": "Limit",
+          "description": "Maximum entries to return."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
+        }
+      }
+    },
+    "duplicate_scan_result": {
+      "name": "Duplicate scan result",
+      "description": "Query duplicate photo scan results (run duplicate_scan start first).",
+      "fields": {
+        "task_id": {
+          "name": "Task ID",
+          "description": "Scan task id."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum groups to return."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
+        },
+        "filter": {
+          "name": "Filter",
+          "description": "Device-side filter."
+        }
+      }
+    },
+    "device_diagnostics": {
+      "name": "Device diagnostics",
+      "description": "Fetch device error code, repair mode and Samba share status in one call (troubleshooting)."
     }
   },
   "common": {

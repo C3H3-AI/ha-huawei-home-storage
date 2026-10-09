@@ -30,6 +30,7 @@ from homeassistant.core import (
 )
 
 from .const import (
+    ALBUM_PAGE_SIZE,
     CONF_DEVICE_ID,
     DOMAIN,
     FILE_FILES_CATEGORY,
@@ -65,6 +66,12 @@ SERVICE_SHARE_TO_PERSON = "share_to_person"
 SERVICE_ALBUM_INFO = "album_info"
 SERVICE_ALBUM_CHANGES = "album_changes"
 SERVICE_GET_TASK = "get_task"
+# ---- 浏览 / 诊断类（此前只有设备方法、没有服务出口）----
+SERVICE_LIST_ALBUMS = "list_albums"
+SERVICE_ALBUM_PHOTOS = "album_photos"
+SERVICE_LIST_TRASH = "list_trash"
+SERVICE_DUPLICATE_SCAN = "duplicate_scan_result"
+SERVICE_DEVICE_DIAGNOSTICS = "device_diagnostics"
 # ---- 设备级运维 ----
 SERVICE_REBOOT_DEVICE = "reboot_device"
 SERVICE_DISK_SLEEP = "disk_sleep"
@@ -422,6 +429,92 @@ async def async_register_services(hass: HomeAssistant) -> None:
             return {"ok": False, "error": str(exc)}
         ok, dev_err = _device_ok(result)
         return {"ok": ok, "count": len(ids), "error": dev_err, "result": result}
+
+    async def _list_albums(call: "ServiceCall") -> "ServiceResponse":
+        """列相册。⚠️ ``album_type=0`` **不含 type=6**（用户/共享相册），要取全就传 6 或 -1。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        atype = int(call.data.get("album_type", 0))
+        try:
+            items = await runtime.client.async_get_album_list(atype)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "album_type": atype, "count": len(items), "items": items}
+
+    async def _album_photos(call: "ServiceCall") -> "ServiceResponse":
+        """列相册内的照片（``getAlbumInfo``，含路径与缩略图）。支持游标分页。"""
+        runtime, entry, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        if (bad := _need_device_id(entry)) is not None:
+            return bad
+        try:
+            res = await runtime.client.async_get_album_photos(
+                int(call.data["album_id"]),
+                int(call.data.get("album_type") or 6),
+                device_id=_entry_device_id(entry),
+                last_cre_time=int(call.data.get("last_cre_time") or 0),
+                last_row_id=int(call.data.get("last_row_id") or 0),
+                num=int(call.data.get("num") or ALBUM_PAGE_SIZE),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        photos = res.get("photos") or []
+        return {"ok": True, "count": len(photos), "items": photos,
+                "lastCreTime": res.get("lastCreTime"),
+                "lastRowId": res.get("lastRowId")}
+
+    async def _list_trash(call: "ServiceCall") -> "ServiceResponse":
+        """回收站查询（``queryBin``，返回**完整元数据**含 assets / 原图路径）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            res = await runtime.client.async_query_bin(
+                int(call.data.get("offset") or 0),
+                int(call.data.get("num") or 100),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        # ⚠️ 该接口直接返回**列表**（不是 dict），与媒体源 _browse_trash 的取法一致
+        items = [x for x in (res or []) if isinstance(x, dict)]
+        return {"ok": True, "count": len(items), "items": items}
+
+    async def _duplicate_scan_result(call: "ServiceCall") -> "ServiceResponse":
+        """查询重复照片扫描结果（只读，需先跑 ``duplicate_scan`` 的 start）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            res = await runtime.client.async_query_duplicate_scan(
+                int(call.data.get("task_id") or 0),
+                int(call.data.get("offset") or 0),
+                int(call.data.get("limit") or 20),
+                int(call.data.get("filter") or 0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "result": res}
+
+    async def _device_diagnostics(call: "ServiceCall") -> "ServiceResponse":
+        """设备诊断快照：错误码 / 维修模式 / Samba 共享状态（排障用）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        client = runtime.client
+        out: dict[str, Any] = {}
+        for key, getter in (
+            ("dev_err_code", client.async_get_dev_err_code),
+            ("repair_mode", client.async_get_repair_mode),
+            ("samba_public", client.async_get_samba_public),
+            ("samba_user", client.async_get_samba_user),
+        ):
+            try:
+                out[key] = await getter()
+            except Exception as exc:  # noqa: BLE001  单项失败不影响其它
+                out[key] = {"error": str(exc)}
+        return {"ok": True, "result": out}
 
     async def _get_task(call: "ServiceCall") -> "ServiceResponse":
         """按 taskId 查单个任务详情（``/<service>/getTaskStatus``）。"""
@@ -1043,6 +1136,52 @@ async def async_register_services(hass: HomeAssistant) -> None:
             ),
             vol.Optional("category"): CATEGORY,
         }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_LIST_ALBUMS, _list_albums,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Optional("album_type", default=0): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ALBUM_PHOTOS, _album_photos,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("album_id"): vol.Coerce(int),
+            vol.Optional("album_type", default=6): vol.Coerce(int),
+            vol.Optional("num", default=ALBUM_PAGE_SIZE): vol.All(
+                int, vol.Range(min=1, max=500)),
+            vol.Optional("last_cre_time", default=0): vol.Coerce(int),
+            vol.Optional("last_row_id", default=0): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_LIST_TRASH, _list_trash,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Optional("num", default=100): vol.All(int, vol.Range(min=1, max=500)),
+            vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DUPLICATE_SCAN, _duplicate_scan_result,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Optional("task_id", default=0): vol.Coerce(int),
+            vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
+            vol.Optional("limit", default=20): vol.All(int, vol.Range(min=1, max=200)),
+            vol.Optional("filter", default=0): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DEVICE_DIAGNOSTICS, _device_diagnostics,
+        schema=vol.Schema(entry_field),
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
