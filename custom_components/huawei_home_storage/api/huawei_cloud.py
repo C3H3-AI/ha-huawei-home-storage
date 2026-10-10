@@ -262,6 +262,11 @@ def start_service_blocking(
 
     result: dict[str, Any] = {}
     done = threading.Event()
+    # 诊断计数（不改变任何行为）：本轮收到的候选消息数、以及各条的 keyid 是否
+    # 与我们本次发出的匹配。用于事后判定"拿错消息/私钥配对错乱"这类偶发失败
+    # 的根因——**只记条数与布尔判定，不记录任何消息内容或凭据**。
+    diag = {"candidates": 0, "keyid_match": 0, "payloads_parsed": 0}
+    my_keyid = (payload.get("body") or {}).get("keyid") or ""
 
     def _on_connect(client, userdata, flags, rc):  # noqa: ANN001
         if rc == 0:
@@ -272,7 +277,11 @@ def start_service_blocking(
             body = json.loads(msg.payload.decode("utf-8", "replace")).get("body", {})
         except Exception:  # noqa: BLE001
             return
+        diag["payloads_parsed"] += 1
         if isinstance(body, dict) and body.get("devId") == cloud_dev_id and "services" in body:
+            diag["candidates"] += 1
+            if my_keyid and body.get("keyid") == my_keyid:
+                diag["keyid_match"] += 1
             result["data"] = body
             done.set()
 
@@ -290,7 +299,9 @@ def start_service_blocking(
             time.sleep(0.2)
         client.publish(MQTT_CMD_TOPIC, json.dumps(payload), qos=1)
         if not done.wait(timeout):
-            raise HuaweiCloudError("MQTT 未收到设备响应（超时）")
+            raise HuaweiCloudError(
+                f"MQTT 未收到设备响应（超时）｜诊断: {diag}"
+            )
     finally:
         try:
             client.loop_stop()
@@ -304,8 +315,15 @@ def start_service_blocking(
     info = (svc or {}).get("data") or {}
     chain, encrypted = info.get("chain"), info.get("encrypted")
     if not chain or not encrypted:
-        raise HuaweiCloudError(f"设备返回缺少 chain/encrypted: {str(body)[:200]}")
-    return decrypt_credentials(private_key, chain, encrypted)
+        raise HuaweiCloudError(
+            f"设备返回缺少 chain/encrypted｜诊断: {diag}"
+        )
+    try:
+        return decrypt_credentials(private_key, chain, encrypted)
+    except HuaweiCloudError as err:
+        # 把本轮 MQTT 诊断带进错误：candidates>1 或 keyid_match=0 → 说明
+        # "多响应/私钥配对错乱"；否则更可能是设备侧下发的密文异常。
+        raise HuaweiCloudError(f"{err}｜诊断: {diag}") from err
 
 
 # ---------------------------------------------------------------------------
