@@ -467,6 +467,24 @@
         }
       }
     },
+    "download_file": {
+      "name": "下载文件",
+      "description": "从设备文件空间流式下载文件到 HA 主机（限写 uploads 目录）。",
+      "fields": {
+        "path": {
+          "name": "设备路径",
+          "description": "例如 /file/备份/note.txt。"
+        },
+        "local_path": {
+          "name": "本地目标路径",
+          "description": "限定在 /config/uploads 下；给目录时自动取设备路径的文件名。"
+        },
+        "category": {
+          "name": "空间",
+          "description": "user = 我的文件；public = 共享。"
+        }
+      }
+    },
     "cancel_upload": {
       "name": "取消上传",
       "description": "取消进行中的上传（需 prepareUpload 返回的 fileId）。",

@@ -467,6 +467,24 @@
         }
       }
     },
+    "download_file": {
+      "name": "Download file",
+      "description": "Stream a file from the device file space to the HA host (writes are limited to the uploads folder).",
+      "fields": {
+        "path": {
+          "name": "Device path",
+          "description": "e.g. /file/backup/note.txt."
+        },
+        "local_path": {
+          "name": "Local destination path",
+          "description": "Limited to /config/uploads; pass a folder to reuse the device file name."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
     "cancel_upload": {
       "name": "Cancel upload",
       "description": "Cancel an in-progress upload (needs the fileId from prepareUpload).",
