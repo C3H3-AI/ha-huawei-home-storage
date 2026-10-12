@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+
+- **`download_file` 服务** —— 与 `upload_file` 对称：把设备文件空间的文件
+  **流式**下载到 HA 主机（内存 ≈ 一个分块，几百 MB 文件不吃内存）。
+  - `local_path` 限定在 `/config/uploads` 下（与上传的读取限制对称，
+    防止写穿容器覆盖 `secrets.yaml` / `.storage`），父目录自动创建。
+  - `local_path` 给目录（尾斜杠或已存在目录）时自动取设备侧文件名。
+  - 下载失败时清掉半截文件，不留误导性残留。
+
+### 修正
+
+- README 中 `search_files` 仍写着「参数未解出、返回失败」—— 该服务在
+  `feat/file-search` 已实测可用，表格与描述更新为现状。
+
 ## [0.10.0] - 2026-10-08
 
 ### 新增

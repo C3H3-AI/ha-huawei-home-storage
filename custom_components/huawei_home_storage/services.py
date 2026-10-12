@@ -4,9 +4,9 @@
 * **只读查询**：``query_files`` / ``file_detail`` / ``search_files`` /
   ``task_status`` / ``list_recycle`` / ``photo_info``
 * **文件空间写入**：``create_folder`` / ``rename_path`` / ``move_paths`` /
-  ``copy_paths`` / ``delete_paths`` / ``upload_file`` / ``cancel_upload`` /
-  ``copy_to_album`` / ``recover_recycle``（删除**一律进回收站**、可逆；
-  永久删除的端点参数没解出，集成不提供，回收站条目请在客户端 App 里清）
+  ``copy_paths`` / ``delete_paths`` / ``upload_file`` / ``download_file`` /
+  ``cancel_upload`` / ``copy_to_album`` / ``recover_recycle``（删除**一律进
+  回收站**、可逆；永久删除的端点参数没解出，集成不提供，回收站条目请在客户端 App 里清）
 * **设备/账号运维**：``refresh_credentials`` / ``duplicate_scan`` /
   ``reboot_device`` / ``disk_sleep`` / ``usb_plug_out``
 
@@ -52,6 +52,7 @@ SERVICE_MOVE_PATHS = "move_paths"
 SERVICE_COPY_PATHS = "copy_paths"
 SERVICE_DELETE_PATHS = "delete_paths"
 SERVICE_UPLOAD_FILE = "upload_file"
+SERVICE_DOWNLOAD_FILE = "download_file"
 SERVICE_CANCEL_UPLOAD = "cancel_upload"
 SERVICE_COPY_TO_ALBUM = "copy_to_album"
 SERVICE_LIST_RECYCLE = "list_recycle"
@@ -793,6 +794,73 @@ async def async_register_services(hass: HomeAssistant) -> None:
         return {"ok": True, "dest_path": dest_path, "bytes": len(payload),
                 "result": result}
 
+    async def _download_file(call: "ServiceCall") -> "ServiceResponse":
+        """从设备文件空间下载文件到 HA 主机（流式落盘，内存 ≈ 一个分块）。
+
+        与 ``upload_file`` 对称：``local_path`` 限定在 ``uploads`` 目录下
+        （防止写到任意路径覆盖 ``secrets.yaml`` / ``.storage``），父目录
+        不存在时自动创建；``local_path`` 给目录时自动取设备路径的文件名。
+        失败时清掉半截文件，不留误导性残留。
+        """
+        runtime, entry, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        if (bad := _need_device_id(entry)) is not None:
+            return bad
+        norm, perr = _safe_device_path(str(call.data["path"]))
+        if perr:
+            return {"ok": False, "error": perr}
+        if norm.endswith("/"):
+            return {"ok": False, "error": "path 必须是文件，不能是目录"}
+
+        import os as _os  # noqa: PLC0415
+
+        from .transfer import download_stream  # noqa: PLC0415
+
+        root = _allowed_upload_dir(hass)
+        dest = str(call.data["local_path"])
+        # 给目录（带尾斜杠或已存在）时，取设备路径的基名作为文件名
+        if dest.rstrip("/\\").endswith(("/", "\\")) or _os.path.isdir(dest):
+            name = _os.path.basename(norm.rstrip("/")) or "download.bin"
+            dest = _os.path.join(dest, name)
+        real = _os.path.realpath(dest)
+        if not (real == root or real.startswith(root + _os.sep)):
+            return {
+                "ok": False,
+                "error": f"local_path 只允许写入 {root} 下的文件（防止覆盖敏感配置）",
+            }
+
+        def _prepare() -> None:
+            _os.makedirs(_os.path.dirname(real), exist_ok=True)
+
+        try:
+            await hass.async_add_executor_job(_prepare)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"创建目录失败: {exc}"}
+
+        category = call.data.get("category") or DEFAULT_CATEGORY
+        total = 0
+        try:
+            fh = await hass.async_add_executor_job(open, real, "wb")
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"打开目标文件失败: {exc}"}
+        try:
+            async for block in download_stream(
+                runtime.client, norm, category=category
+            ):
+                await hass.async_add_executor_job(fh.write, block)
+                total += len(block)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("下载失败(%s): %s", norm, exc)
+            await hass.async_add_executor_job(fh.close)
+            try:
+                await hass.async_add_executor_job(_os.remove, real)
+            except OSError:
+                pass
+            return {"ok": False, "path": norm, "error": str(exc)}
+        await hass.async_add_executor_job(fh.close)
+        return {"ok": True, "path": norm, "local_path": real, "bytes": total}
+
     async def _cancel_upload(call: "ServiceCall") -> "ServiceResponse":
         """取消进行中的上传（``/filesvc/cancelUpload``，需 ``fileId``）。"""
         runtime, entry, err = _pick(hass, call.data.get("entry_id"))
@@ -1047,6 +1115,16 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Required("dest_path"): str,
             vol.Optional("content"): cv.string,
             vol.Optional("local_path"): cv.string,
+            vol.Optional("category"): CATEGORY,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DOWNLOAD_FILE, _download_file,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("path"): str,
+            vol.Required("local_path"): cv.string,
             vol.Optional("category"): CATEGORY,
         }),
         supports_response=SupportsResponse.ONLY,

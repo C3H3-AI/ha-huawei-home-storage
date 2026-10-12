@@ -41,7 +41,7 @@ Home Assistant 自定义集成，用于接入**华为家庭存储**（AS6020 系
 | **HA 备份** | **家庭存储可直接作为 HA 的备份目标**（设置 → 系统 → 备份 里可选）。纯 Core / Container 没有 Supervisor 时，不必再装 Samba 或额外插件即可把备份存到 NAS |
 | 侧边栏面板 | 响应式面板（桌面侧栏 / 手机底栏），5 个视图分两组：**浏览**（概览 · 相册 · 文件）、**管理**（设备 · 用户）。真实相册逐层浏览、照片墙与全屏查看、文件空间三区切换，可在面板内直接添加华为账号，也可**新建文件夹 / 重命名 / 移动 / 复制 / 删除 / 上传** |
 | 诊断 | 内置 diagnostics：隧道端口、盘位序列号、设备用户、协调器状态一键导出 |
-| 服务 | 33 个：文件空间（建目录/重命名/移动/复制/删除/上传/搜索）、相册、回收站、任务中心、设备运维等，详见下文 |
+| 服务 | 34 个：文件空间（建目录/重命名/移动/复制/删除/上传/下载/搜索）、相册、回收站、任务中心、设备运维等，详见下文 |
 | 流式传输 | 上传/下载分块进行（设备侧 `Content-Range`），大文件不占 HA 内存；实测 25 MB 往返 MD5 一致、223 MB 备份完整落盘 |
 
 ---
@@ -238,6 +238,7 @@ Home Assistant 自定义集成，用于接入**华为家庭存储**（AS6020 系
 | `copy_paths` | 把若干文件/目录复制到 `dest_dir`（同空间；目标目录需已存在） |
 | `delete_paths` | 删除文件/目录 —— **一律移入回收站**（可逆） |
 | `upload_file` | 上传文本（`content`）或 HA 主机上的文件（`local_path`） |
+| `download_file` | 从设备**流式下载**文件到 HA 主机（`path` → `local_path`；限写 `/config/uploads`，给目录时自动取文件名） |
 | `cancel_upload` | 取消进行中的上传（需 `prepareUpload` 的 `fileId`） |
 | `copy_to_album` | 把文件空间里的照片复制进相册 |
 | `list_recycle` | 列回收站（返回的 `rid` 供恢复用） |
@@ -245,7 +246,7 @@ Home Assistant 自定义集成，用于接入**华为家庭存储**（AS6020 系
 | `query_files` | 列最近/全部/指定目录/相册照片（只读） |
 | `file_detail` | 文件/目录详情（`/file/` 这类有效路径可用） |
 | `photo_info` | 把相册照片的 `fileId` 换成完整元数据（含 `hdcFilePath` 原图路径） |
-| `search_files` | 按关键字搜索（设备参数未解出，目前返回失败，调用需容错） |
+| `search_files` | 按关键字搜索（参数由穷举实测得出：`query` + `limit` + `offset`） |
 | `task_status` | 查任务中心（`filesvc` / `trans` / `gallery`；`all_tasks: true` 取 trans 全表） |
 | `clean_task_records` | 清除任务中心的历史记录（只影响任务列表显示，不碰任何文件） |
 | `get_task` | 按 `taskId` 精确查单个任务详情 |
@@ -299,6 +300,12 @@ data:
   dest_path: /file/备份/config.yaml
   local_path: /config/configuration.yaml
   category: user
+
+# ③b 下载：设备文件 → HA 主机（流式，大文件不占内存；限写 /config/uploads 下）
+service: huawei_home_storage.download_file
+data:
+  path: /file/备份/config.yaml
+  local_path: /config/uploads/config.yaml   # 给目录则自动取设备侧文件名
 
 # ④ 删除（进回收站）+ 回收站列表 / 恢复
 service: huawei_home_storage.delete_paths
