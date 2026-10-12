@@ -208,7 +208,14 @@ async def upload_stream(
         raise TransferError(
             "设备未返回上传完成确认（%s，%s 字节）" % (dest_path, total_size)
         )
-    return last or {"code": 0, "data": {"path": dest_path}}
+    result = last or {"code": 0, "data": {"path": dest_path}}
+    # ⚠️ prepareUpload 给的 fileId 是**相册域**的，回传它，
+    # 调用方才能"上传后直接加入相册"（此前丢弃导致这条路走不通）。
+    if isinstance(result, dict):
+        result.setdefault("fileId", file_id)
+        if isinstance(result.get("data"), dict):
+            result["data"].setdefault("fileId", file_id)
+    return result
 
 
 async def download_stream(
