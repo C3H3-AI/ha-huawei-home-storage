@@ -7,6 +7,26 @@
 
 ### 新增
 
+#### Gallery 域补齐（2026-10-13 PR #30，41 → 48 服务）
+
+**gallery 域 23 → 31 个 `async_` 方法；服务 41 → 48**
+
+- 补齐 **8 个 gallery 端点**（全部逆向推断，待实机验证）：
+
+  | 端点 | 新增 async_ 方法 | 新增服务 |
+  |------|-----------------|----------|
+  | `/gallery/delAlbumMemb` | `async_del_album_memb()` | `remove_album_members`（对称已有 `add_album_members`） |
+  | `/gallery/getAlbumMembsInfo` | `async_get_album_membs_info()` | （后端方法） |
+  | `/gallery/getAllAlbumList` | `async_get_all_album_list()` | `list_all_albums`（含隐藏/系统/推荐） |
+  | `/gallery/modifyAlbumsHiddenStatus` | `async_hide_albums()` | `hide_albums` |
+  | `/gallery/mergeFaceAlbums` | `async_merge_face_albums()` | `merge_face_albums` |
+  | `/gallery/addAlbumMembAsync` + `/gallery/taskStatus` | `async_add_album_members_async()` + task_query | （后端方法，大相册异步加成员） |
+  | `/gallery/shareToPerson` + `/gallery/shareToPersonStatus` | `async_share_to_person()` + status | `share_to_person`（同步版，异步版 `add_share_to_person` 已有） |
+
+- **补注册 3 个之前有 async_ 方法但没服务的**：`search_album_photos`（来自 PR #28 的 `async_album_search`）、`rename_media`（来自 PR #28 的 `async_modify_file_attr`）、`remove_album_members`
+
+- **⚠️ 未实机验证**：全部逆向推断；返回 1101 请在 App 上抓包反馈
+
 #### Top 优先缺口（2026-10-13 PR #28，36 → 41 服务）
 
 **核心 scope 覆盖从 42/118（35.6%）→ 64/118（54.2%）**
