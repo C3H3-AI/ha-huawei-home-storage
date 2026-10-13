@@ -23,10 +23,14 @@ import aiohttp
 
 from ..const import (
     API_ALBUM_CFG,
+    API_ALBUM_INFO,
     API_ALBUM_INC,
     API_ALBUM_LIST,
     API_ALBUM_MEMBERS,
+    API_ADD_ALBUM_MEMB,
     API_ADD_SHARE_TO_PERSON,
+    API_CANCEL_UPLOAD,
+    API_CLEAN_TASK_RECORD,
     API_DISK_CHANGE,
     API_FILES,
     API_HEARTBEAT,
@@ -34,6 +38,7 @@ from ..const import (
     API_QUERY_BIN,
     API_RECYCLE,
     API_RECYCLE_OPERATE,
+    API_SELECTED_PHOTOS_INFO,
     API_USB_STATUS,
     API_PREPARE_UPLOAD,
     API_CANCEL_UPLOAD,
@@ -45,6 +50,7 @@ from ..const import (
     API_TRANS_MOVE,
     API_TRANS_COPY,
     API_TRANS_ACROSSCOPY,
+    API_TRANS_ALL_TASK,
     API_TRANS_TASK_STATUS,
     API_TRANS_STATUS,
     API_USER_DATA,
@@ -894,14 +900,14 @@ class HuaweiDeviceClient:
             "num": num,
         }
         try:
-            data = await self._request("/gallery/getAlbumInfo", req)
+            data = await self._request(API_ALBUM_INFO, req)
         except HuaweiDeviceError as err:
             # 「所有照片」等特殊相册：albumType=1 → 30109，改用 2 重试。
             # _request 对非 0 code 直接抛异常，所以在这里捕获判断。
             if "30109" not in str(err):
                 raise
             data = await self._request(
-                "/gallery/getAlbumInfo", {**req, "albumType": 2}
+                API_ALBUM_INFO, {**req, "albumType": 2}
             )
         photos = data.get("data") or []
         if not isinstance(photos, list):
@@ -1354,7 +1360,7 @@ class HuaweiDeviceClient:
         取到的删除残留（``operation=2``）会返回空数组。
         """
         data = await self._request(
-            "/gallery/getSelectedPhotosInfo",
+            API_SELECTED_PHOTOS_INFO,
             method="POST",
             json_body={"clientType": DEVICE_CLIENT_TYPE,
                        "fileIds": [{"fileId": f} for f in file_ids]},
@@ -1394,7 +1400,7 @@ class HuaweiDeviceClient:
         if not album_name:
             album_name = await self._album_name_by_id(int(album_id))
         return await self._request(
-            "/gallery/addAlbumMemb",
+            API_ADD_ALBUM_MEMB,
             method="POST",
             json_body={
                 "clientType": DEVICE_CLIENT_TYPE,
@@ -1806,7 +1812,7 @@ class HuaweiDeviceClient:
         """
         creds = await self.async_ensure_credentials()
         return await self._request(
-            "/filesvc/cleanTaskRecord",
+            API_CLEAN_TASK_RECORD,
             method="POST",
             params={"category": category},
             json_body={
@@ -1826,7 +1832,7 @@ class HuaweiDeviceClient:
         """
         creds = await self.async_ensure_credentials()
         data = await self._request(
-            "/trans/getAllTask",
+            API_TRANS_ALL_TASK,
             method="POST",
             json_body={
                 "clientType": DEVICE_CLIENT_TYPE,

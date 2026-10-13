@@ -92,6 +92,10 @@ SERVICE_HIDE_ALBUMS = "hide_albums"
 SERVICE_LIST_ALL_ALBUMS = "list_all_albums"
 SERVICE_SHARE_TO_PERSON = "share_to_person"
 SERVICE_MERGE_FACE_ALBUMS = "merge_face_albums"
+# ---- 辅助查询 ----
+SERVICE_RECENT_FILES = "recent_files"
+SERVICE_INSTALLED_PLUGINS = "installed_plugins"
+SERVICE_ALL_TRANS_TASKS = "all_trans_tasks"
 
 REFRESH_SCHEMA = vol.Schema({vol.Optional("entry_id"): str})
 
@@ -704,6 +708,46 @@ async def async_register_services(hass: HomeAssistant) -> None:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "target_album_id": target_id,
                 "merged_count": len(source_ids), "result": result}
+
+    async def _recent_files(call: "ServiceCall") -> "ServiceResponse":
+        """**最近文件**（设备侧最近访问/修改的文件列表）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        limit = int(call.data.get("limit", 50))
+        try:
+            result = await runtime.client.async_get_recent_files(limit=limit)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("最近文件查询失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        files = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(files, list):
+            files = []
+        return {"ok": True, "count": len(files), "files": files}
+
+    async def _installed_plugins(call: "ServiceCall") -> "ServiceResponse":
+        """**已装插件列表**（acelite 接口）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            result = await runtime.client.async_get_installed_plugins()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("已装插件查询失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "result": result}
+
+    async def _all_trans_tasks(call: "ServiceCall") -> "ServiceResponse":
+        """**全量传输任务列表**（trans 域，含 move/copy/upload 等）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            tasks = await runtime.client.async_get_all_trans_tasks()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("传输任务查询失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "task_count": len(tasks), "tasks": tasks}
 
     async def _album_photos(call: "ServiceCall") -> "ServiceResponse":
         """列相册内的照片（``getAlbumInfo``，含路径与缩略图）。支持游标分页。"""
@@ -1704,6 +1748,24 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Exclusive("source_album_id", "src"): vol.Any(int, str),
             vol.Exclusive("source_album_ids", "src"): [vol.Any(int, str)],
         }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RECENT_FILES, _recent_files,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Optional("limit", default=50): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_INSTALLED_PLUGINS, _installed_plugins,
+        schema=vol.Schema({**entry_field}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ALL_TRANS_TASKS, _all_trans_tasks,
+        schema=vol.Schema({**entry_field}),
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(

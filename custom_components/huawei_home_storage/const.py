@@ -123,6 +123,12 @@ API_CLEAN_TASK_RECORD = "/filesvc/cleanTaskRecord"
 # 相册成员：把已有照片加进相册 / 共享到人物（抓包实据 2026-10-09）
 API_ADD_ALBUM_MEMB = "/gallery/addAlbumMemb"
 API_ADD_SHARE_TO_PERSON = "/gallery/addShareToPerson"
+# 相册详情（含封面、路径、缩略图）—— device.py 已有 2 处硬编码，现统一常量
+API_ALBUM_INFO = "/gallery/getAlbumInfo"
+# 相册中选中照片详情
+API_SELECTED_PHOTOS_INFO = "/gallery/getSelectedPhotosInfo"
+# trans 域全量任务列表（GET，与 filesvc/getAllTaskStatus 分属不同域）
+API_TRANS_ALL_TASK = "/trans/getAllTask"
 API_DISK_CHANGE = "/devmanage/diskChange"
 API_USER_MANAGE = "/account/userManageInfo"
 API_USER_DATA = "/account/userDataStatisInfo"
