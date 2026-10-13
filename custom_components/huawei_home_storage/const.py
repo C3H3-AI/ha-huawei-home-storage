@@ -147,8 +147,29 @@ DUP_ACT_STOP = "stop"
 API_DEL_MEDIA = "/gallery/delFile"                    # 进回收站(可逆)
 API_RECOVER_MEDIA = "/gallery/recoverFile"            # 恢复
 API_DEVICE_REBOOT = "/devmanage/deviceReboot"         # 用户显式触发
+API_DEVICE_SHUTDOWN = "/devmanage/devPowerOff"        # 用户显式触发，不可逆
 API_DISK_SLEEP = "/devmanage/diskSleep"
+API_DISK_BASIC_INFO = "/devmanage/diskBasicInfo"      # 当前磁盘状态（接口名 diskBasicInfo）
+API_DISK_SMART_INFO = "/devmanage/diskSmartInfo"      # SMART 健康
 API_USB_PLUG_OUT = "/devmanage/usbPlugOut"
+API_RAID_STATUS = "/raid/getraidstatus"
+
+# 文件空间异步任务查询（batchOperation / trans 返回 taskId，用它查进度）
+API_FILESVC_TASK_STATUS = "/filesvc/getTaskStatus"
+API_FILESVC_ALL_TASKS = "/filesvc/getAllTaskStatus"
+API_FILESVC_VISIBILITY = "/filesvc/visibility"
+API_FILESVC_RETRY_TASK = "/filesvc/retryTask"
+
+# 传输异步任务查询
+API_TRANS_TASK_STATUS = "/trans/getTaskStatus"
+API_TRANS_STATUS = "/trans/status"
+
+# 相册 CRUD
+API_ALBUM_ADD = "/gallery/addAlbum"
+API_ALBUM_DEL = "/gallery/delAlbum"
+API_ALBUM_DEL_MEMB = "/gallery/delAlbumMemb"
+API_ALBUM_SEARCH = "/gallery/search"                  # 相册内照片搜索
+API_GALLERY_MODIFY_ATTR = "/gallery/modifyFileAttr"   # 重命名照片等
 
 PHOTO_PAGE_SIZE = 500               # getIncPhotosInfoTable 固定每页 500
 

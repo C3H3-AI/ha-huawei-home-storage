@@ -701,6 +701,36 @@
       "name": "重启存储设备",
       "description": "⚠️ 会中断存储服务约 1-2 分钟（可恢复）；集成永不自动重启。"
     },
+    "shutdown_device": {
+      "name": "关机",
+      "description": "⚠️ 彻底关机设备（不可逆，需物理按键重启。逆向推断未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        }
+      }
+    },
+    "disk_info": {
+      "name": "磁盘诊断",
+      "description": "查询磁盘基础状态 + SMART 健康（两个端点合在一个响应里）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        }
+      }
+    },
+    "raid_status": {
+      "name": "RAID 状态",
+      "description": "RAID 阵列状态。非 RAID 设备会返回 error",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        }
+      }
+    },
     "disk_sleep": {
       "name": "磁盘休眠",
       "description": "让设备磁盘进入休眠（可恢复，唤醒由设备策略决定）。"
@@ -838,6 +868,42 @@
         "album_type": {
           "name": "相册类型",
           "description": "0=分类相册；6=用户/共享相册。"
+        }
+      }
+    },
+    "add_album": {
+      "name": "创建相册",
+      "description": "新建相册（逆向推断实现，未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "name": {
+          "name": "相册名",
+          "description": "必填"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": "0=系统, 6=共享"
+        }
+      }
+    },
+    "del_album": {
+      "name": "删除相册",
+      "description": "⚠️ 删除相册（不可逆！逆向推断未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "相册 ID",
+          "description": "必填"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": ""
         }
       }
     },

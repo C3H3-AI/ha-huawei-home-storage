@@ -45,10 +45,13 @@ from ..const import (
     API_TRANS_MOVE,
     API_TRANS_COPY,
     API_TRANS_ACROSSCOPY,
+    API_TRANS_TASK_STATUS,
+    API_TRANS_STATUS,
     API_USER_DATA,
     API_ONLINE_STATE,
     API_DEVICE_INFO,
     API_DEVICE_STATUS,
+    API_RAID_STATUS,
     API_SAMBA_PUBLIC,
     API_SAMBA_USER,
     API_AUTO_UPGRADE,
@@ -65,10 +68,22 @@ from ..const import (
     DUP_ACT_STOP,
     API_DEL_MEDIA,
     API_RECOVER_MEDIA,
+    API_ALBUM_ADD,
+    API_ALBUM_DEL,
+    API_ALBUM_DEL_MEMB,
+    API_ALBUM_SEARCH,
+    API_GALLERY_MODIFY_ATTR,
     API_DEVICE_REBOOT,
+    API_DEVICE_SHUTDOWN,
     API_DISK_SLEEP,
+    API_DISK_BASIC_INFO,
+    API_DISK_SMART_INFO,
     API_USB_PLUG_OUT,
     API_USER_MANAGE,
+    API_FILESVC_TASK_STATUS,
+    API_FILESVC_ALL_TASKS,
+    API_FILESVC_VISIBILITY,
+    API_FILESVC_RETRY_TASK,
     DATA_DOWNLOAD_PATH,
     DATA_DOWNLOAD_QUERY,
     DATA_PORT,
@@ -393,6 +408,81 @@ class HuaweiDeviceClient:
             API_ALBUM_CFG, {"albumId": int(album_id), "albumType": int(album_type)}
         )
         return data.get("data") or {}
+
+    async def async_add_album(
+        self,
+        name: str,
+        album_type: int = 0,
+        parent_id: int = 0,
+    ) -> dict[str, Any]:
+        """创建相册（``/gallery/addAlbum``）。
+
+        ⚠️ **逆向推断**：body 形如
+        ``{"albumName": "...", "albumType": 0, "parentAlbumId": 0}``，
+        未实机验证；如果返回 1101 请反馈抓包。
+        """
+        body = {
+            "albumName": name,
+            "albumType": album_type,
+            "parentAlbumId": parent_id,
+        }
+        return await self._request(API_ALBUM_ADD, method="POST", json_body=body)
+
+    async def async_del_album(
+        self,
+        album_id: int,
+        album_type: int = ALBUM_TYPE_USER,
+    ) -> dict[str, Any]:
+        """删除相册（``/gallery/delAlbum``）。**不可逆**。
+
+        ⚠️ **逆向推断**：body 形如
+        ``{"albumId": n, "albumType": m}``，未实机验证。
+        """
+        body = {"albumId": int(album_id), "albumType": int(album_type)}
+        return await self._request(API_ALBUM_DEL, method="POST", json_body=body)
+
+    async def async_album_search(
+        self,
+        keyword: str,
+        album_type: int = 0,
+        num: int = 20,
+        page: int = 0,
+    ) -> dict[str, Any]:
+        """相册内照片搜索（``/gallery/search``）。
+
+        ⚠️ **逆向推断**：query ``?keyword=&albumType=&num=&page=``，
+        GET 形态；未实机验证。
+        """
+        return await self._request(
+            API_ALBUM_SEARCH,
+            {
+                "keyword": keyword,
+                "albumType": album_type,
+                "num": num,
+                "page": page,
+            },
+            method="GET",
+        )
+
+    async def async_modify_file_attr(
+        self,
+        file_ids: list[int],
+        new_name: str | None = None,
+    ) -> dict[str, Any]:
+        """修改照片属性（``/gallery/modifyFileAttr``）。
+
+        典型用途：**重命名单张/多张照片**。
+
+        ⚠️ **逆向推断**：body 形如
+        ``{"fileId": [123, 456], "fileAttr": {"newName": "..."}}``，
+        未实机验证。
+        """
+        body: dict[str, Any] = {"fileId": [int(i) for i in file_ids]}
+        if new_name:
+            body["fileAttr"] = {"newName": new_name}
+        return await self._request(
+            API_GALLERY_MODIFY_ATTR, method="POST", json_body=body
+        )
 
     async def async_get_album_inc(
         self, pre_id: int = 0, num: int = 500
@@ -885,13 +975,49 @@ class HuaweiDeviceClient:
         """
         return await self._request(API_DEVICE_REBOOT, method="POST")
 
+    async def async_post_device_shutdown(self) -> dict[str, Any]:
+        """**关机**（POST，``/devmanage/devPowerOff``）—— 不可逆！
+
+        ⚠️ **实机验证状态**：逆向参数推断（deviceId query + 空 body，
+        与 deviceReboot 同形态），未实机跑过；如果返回 1101 请反馈抓包。
+
+        仅由用户显式点击按钮触发。关机后设备彻底不可达，需物理按键重启。
+        """
+        return await self._request(API_DEVICE_SHUTDOWN, method="POST")
+
     async def async_post_disk_sleep(self) -> dict[str, Any]:
         """磁盘休眠（POST）。会暂停磁盘，属可恢复操作。"""
         return await self._request(API_DISK_SLEEP, method="POST")
 
+    async def async_get_disk_basic_info(self) -> dict[str, Any]:
+        """当前磁盘状态（``/devmanage/diskBasicInfo``，GET）。
+
+        ⚠️ **逆向推断**：deviceId query + 无 body，同 diskChange / devErrCode
+        形态，未实机验证。
+        """
+        data = await self._request(API_DISK_BASIC_INFO, method="GET")
+        return data.get("data") or {}
+
+    async def async_get_disk_smart_info(self) -> dict[str, Any]:
+        """磁盘 SMART 健康（``/devmanage/diskSmartInfo``，GET）。
+
+        ⚠️ **逆向推断**：deviceId query + 无 body，未实机验证。
+        """
+        data = await self._request(API_DISK_SMART_INFO, method="GET")
+        return data.get("data") or {}
+
     async def async_post_usb_plug_out(self) -> dict[str, Any]:
         """弹出 USB 设备（POST）。可恢复操作。"""
         return await self._request(API_USB_PLUG_OUT, method="POST")
+
+    async def async_get_raid_status(self) -> dict[str, Any]:
+        """RAID 阵列状态（``/raid/getraidstatus``，GET）。
+
+        ⚠️ **逆向推断**：deviceId query + 无 body，未实机验证。
+        非 RAID 设备可能返回 1101，调用方应做降级。
+        """
+        data = await self._request(API_RAID_STATUS, method="GET")
+        return data.get("data") or {}
 
     async def async_get_device_users(self) -> list[dict[str, Any]]:
         """设备上的全部用户（管理员 + 家庭成员）。
@@ -1476,6 +1602,34 @@ class HuaweiDeviceClient:
             },
         )
         return (data.get("data") or {}).get("tasks") or []
+
+    async def async_get_task_by_id(
+        self,
+        task_id: int,
+        service: str = "filesvc",
+    ) -> dict[str, Any]:
+        """按 **单个 taskId** 查任务进度（``/filesvc/getTaskStatus`` /
+        ``/trans/getTaskStatus``，取决于 service）。
+
+        ⚠️ **逆向推断**：query 带 taskId + clientType + deviceId，
+        GET 形态；未实机验证。
+        与 :meth:`async_get_task_status` 互补 —— 后者查全量表，
+        本方法查单个 batchOperation 返回的 taskId。
+        """
+        if service == "trans":
+            api = API_TRANS_TASK_STATUS
+        else:
+            api = API_FILESVC_TASK_STATUS
+        creds = await self.async_ensure_credentials()
+        return await self._request(
+            api,
+            {
+                "taskId": int(task_id),
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+            },
+            method="GET",
+        )
 
     async def async_clean_task_records(
         self, task_ids: list[int], category: str = "user"

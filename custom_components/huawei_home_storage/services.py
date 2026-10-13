@@ -77,8 +77,14 @@ SERVICE_DUPLICATE_SCAN = "duplicate_scan_result"
 SERVICE_DEVICE_DIAGNOSTICS = "device_diagnostics"
 # ---- 设备级运维 ----
 SERVICE_REBOOT_DEVICE = "reboot_device"
+SERVICE_SHUTDOWN_DEVICE = "shutdown_device"
 SERVICE_DISK_SLEEP = "disk_sleep"
+SERVICE_DISK_INFO = "disk_info"
 SERVICE_USB_PLUG_OUT = "usb_plug_out"
+SERVICE_RAID_STATUS = "raid_status"
+# ---- 相册 CRUD ----
+SERVICE_ADD_ALBUM = "add_album"
+SERVICE_DEL_ALBUM = "del_album"
 
 REFRESH_SCHEMA = vol.Schema({vol.Optional("entry_id"): str})
 
@@ -198,6 +204,55 @@ async def async_register_services(hass: HomeAssistant) -> None:
             _LOGGER.error("重启设备失败: %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "action": "reboot", "result": result}
+
+    async def _shutdown_device(call: "ServiceCall") -> "ServiceResponse":
+        """⚠️ **关机**（不可逆）：设备彻底断电，需物理按键重启。
+
+        ⚠️ 逆向推断实现，未实机验证；如果返回 1101 请反馈抓包。
+        """
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        _LOGGER.warning("收到 shutdown_device 服务调用：设备将**彻底关机**，需物理重启（不可逆）")
+        try:
+            result = await runtime.client.async_post_device_shutdown()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("关机失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "action": "shutdown", "result": result}
+
+    async def _disk_info(call: "ServiceCall") -> "ServiceResponse":
+        """磁盘诊断：**基础状态 + SMART 健康**。
+
+        两个端点都跑一遍，合在一个响应里方便看。非 RAID 设备会跳过 RAID 查询。
+        """
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        result: dict[str, Any] = {"ok": True}
+        try:
+            result["basic"] = await runtime.client.async_get_disk_basic_info()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("diskBasicInfo 失败(可能未实现): %s", exc)
+            result["basic_error"] = str(exc)
+        try:
+            result["smart"] = await runtime.client.async_get_disk_smart_info()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("diskSmartInfo 失败(可能未实现): %s", exc)
+            result["smart_error"] = str(exc)
+        return result
+
+    async def _raid_status(call: "ServiceCall") -> "ServiceResponse":
+        """RAID 阵列状态。非 RAID 设备会返回 error（RAID 不是标配）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            result = await runtime.client.async_get_raid_status()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("RAID 查询失败(非 RAID 设备或未实现): %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "raid": result}
 
     async def _disk_sleep(call: "ServiceCall") -> "ServiceResponse":
         """磁盘休眠（可恢复；唤醒由设备自身策略决定）。"""
@@ -444,6 +499,46 @@ async def async_register_services(hass: HomeAssistant) -> None:
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "album_type": atype, "count": len(items), "items": items}
+
+    async def _add_album(call: "ServiceCall") -> "ServiceResponse":
+        """创建相册（逆向推断实现，未实机验证；body={albumName, albumType}）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        name = str(call.data.get("name", "") or "").strip()
+        if not name:
+            return {"ok": False, "error": "name 必填"}
+        album_type = int(call.data.get("album_type", 0))
+        try:
+            result = await runtime.client.async_add_album(
+                name=name, album_type=album_type
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("创建相册失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        ok, dev_err = _device_ok(result)
+        return {"ok": ok, "name": name, "error": dev_err, "result": result}
+
+    async def _del_album(call: "ServiceCall") -> "ServiceResponse":
+        """**删除相册**（⚠️ 不可逆；逆向推断实现，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        album_id = int(call.data.get("album_id", 0))
+        if not album_id:
+            return {"ok": False, "error": "album_id 必填"}
+        album_type = int(call.data.get("album_type", 0))
+        try:
+            result = await runtime.client.async_del_album(
+                album_id=album_id, album_type=album_type
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("删除相册失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        await runtime.fast.async_request_refresh()
+        ok, dev_err = _device_ok(result)
+        return {"ok": ok, "album_id": album_id,
+                "error": dev_err, "result": result}
 
     async def _album_photos(call: "ServiceCall") -> "ServiceResponse":
         """列相册内的照片（``getAlbumInfo``，含路径与缩略图）。支持游标分页。"""
@@ -1359,6 +1454,24 @@ async def async_register_services(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_ADD_ALBUM, _add_album,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("name"): str,
+            vol.Optional("album_type", default=0): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DEL_ALBUM, _del_album,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("album_id"): vol.Coerce(int),
+            vol.Optional("album_type", default=0): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_ALBUM_PHOTOS, _album_photos,
         schema=vol.Schema({
             **entry_field,
@@ -1468,12 +1581,27 @@ async def async_register_services(hass: HomeAssistant) -> None:
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_SHUTDOWN_DEVICE, _shutdown_device,
+        schema=vol.Schema(entry_field),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_DISK_SLEEP, _disk_sleep,
         schema=vol.Schema(entry_field),
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_DISK_INFO, _disk_info,
+        schema=vol.Schema(entry_field),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_USB_PLUG_OUT, _usb_plug_out,
+        schema=vol.Schema(entry_field),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RAID_STATUS, _raid_status,
         schema=vol.Schema(entry_field),
         supports_response=SupportsResponse.ONLY,
     )
