@@ -7,6 +7,29 @@
 
 ### 新增
 
+#### 全部实现 · 硬编码清零（2026-10-13 PR #32，48 → 50 服务）
+
+**device.py 硬编码路径 0 残留，设备侧 API_ 常量 73/73 全覆盖。**
+
+- **6 处硬编码 → API_ 常量替换**：
+  - 2× `/gallery/getAlbumInfo` → `API_ALBUM_INFO`（新补常量）
+  - `/gallery/getSelectedPhotosInfo` → `API_SELECTED_PHOTOS_INFO`（新补）
+  - `/gallery/addAlbumMemb` → `API_ADD_ALBUM_MEMB`（常量早有但 import 漏了）
+  - `/filesvc/cleanTaskRecord` → `API_CLEAN_TASK_RECORD`（同上）
+  - `/trans/getAllTask` → `API_TRANS_ALL_TASK`（新补）
+
+- **+3 API_ 常量**：`API_ALBUM_INFO` / `API_SELECTED_PHOTOS_INFO` / `API_TRANS_ALL_TASK`
+
+- **+3 服务**：`recent_files` / `installed_plugins` / `all_trans_tasks`
+
+| 维度 | 最终数量 |
+|------|---------|
+| const.py API_ 常量 | **76**（设备侧 73 + 云侧 3 CLOUD_*） |
+| device.py import | **73** — 设备侧全覆盖 |
+| device.py async_ 方法 | **76** |
+| 服务 | **50**（SERVICE_ / yaml / strings 三处一致） |
+| device.py 硬编码路径 | **0** |
+
 #### Gallery 域补齐（2026-10-13 PR #30，41 → 48 服务）
 
 **gallery 域 23 → 31 个 `async_` 方法；服务 41 → 48**
