@@ -7,6 +7,36 @@
 
 ### 新增
 
+#### Top 优先缺口（2026-10-13 PR #28，36 → 41 服务）
+
+**核心 scope 覆盖从 42/118（35.6%）→ 64/118（54.2%）**
+
+- 补齐 **11 个未实现端点**（全部逆向推断，待实机验证）：
+
+  | 端点 | 域 | 新增 async_ 方法 | 新增服务 |
+  |------|------|-----------------|----------|
+  | `/devmanage/devPowerOff` | devmanage | `async_post_device_shutdown()` | `shutdown_device` |
+  | `/devmanage/diskBasicInfo` | devmanage | `async_get_disk_basic_info()` | `disk_info`（合） |
+  | `/devmanage/diskSmartInfo` | devmanage | `async_get_disk_smart_info()` | `disk_info`（合） |
+  | `/raid/getraidstatus` | raid | `async_get_raid_status()` | `raid_status` |
+  | `/filesvc/getTaskStatus` | filesvc | `async_get_task_by_id()` | （后端方法） |
+  | `/trans/getTaskStatus` | trans | `async_get_task_by_id(service="trans")` | （后端方法） |
+  | `/gallery/addAlbum` | gallery | `async_add_album()` | `add_album` |
+  | `/gallery/delAlbum` | gallery | `async_del_album()` | `del_album` |
+  | `/gallery/search` | gallery | `async_album_search()` | （后端方法） |
+  | `/gallery/modifyFileAttr` | gallery | `async_modify_file_attr()` | （后端方法） |
+
+- 服务总数 **36 → 41**：新增 `shutdown_device` / `disk_info` / `raid_status` / `add_album` / `del_album`
+
+- **逆向方法**：App Retrofit 接口在 517616675.jar 之外（12 个 dex 二进制搜过，0 命中），
+  但集成的 `_request` 自动注入 deviceId query，**同域端点形态与已实现的 deviceReboot / diskSleep / usbPlugOut
+  完全一致**（deviceId query + 空 body POST），直接类比实现。
+
+- **⚠️ 未实机验证**：所有新端点参数形态是从已实现端点类比推断；
+  如果返回 1101，请在 App 上抓包反馈。
+
+#### 永久删除/回收站操作（2026-10-13 PR #27）
+
 - **从智慧生活 App 插件逆向出永久删除参数**（2026-10-13，`517616675.jar`）：
   之前一直以为"永久删除做不到"，实际是逆向漏了两个关键参数：
   1. `/filesvc/batchOperation` 删文件进还是不进回收站 → body 加 `operationType: "force"` / `"recycle"`（之前只有 query 的 `type` 字段没用）
