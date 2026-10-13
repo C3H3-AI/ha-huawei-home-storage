@@ -14,7 +14,7 @@ const STYLES = String.raw`
   --divider:var(--divider-color,#e6eaf0);
 
   /* 品牌：青蓝 */
-  --brand:#0e8fc4;
+  --brand:#0a76a8;   /* 白字对比 3.66→5.04:1 */
   --brand-2:#12b3e8;
   --brand-soft:rgba(14,143,196,.10);
   --brand-line:rgba(14,143,196,.24);
@@ -24,13 +24,20 @@ const STYLES = String.raw`
   --warn-soft:rgba(224,144,42,.14);
   --danger-soft:rgba(217,79,69,.12);
 
+  /* 间距刻度（此前只有 --gap，且全站仅 4 处引用 → 名存实亡） */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px;
+  /* 圆角刻度（此前圆角有 6/9/10/12/14/15/18px 七种散值） */
+  --r-xs:4px; --r-sm:8px; --r-md:12px; --r-lg:18px; --r-xl:22px; --r-pill:999px;
+  --on-brand:#ffffff;        /* 压在品牌色上的前景色；深色皮肤会覆盖 */
   --radius:18px;
   --radius-s:12px;
   --gap:20px;
   --topbar:62px;
 
-  --sh-1:0 1px 2px rgba(15,23,42,.04),0 2px 6px rgba(15,23,42,.05);
-  --sh-2:0 6px 18px -4px rgba(15,23,42,.12),0 2px 6px -2px rgba(15,23,42,.06);
+  /* 现代纵深：多层柔和阴影（此前总 alpha 仅 .09，卡片与背景几乎无分离） */
+  --sh-1:0 1px 2px rgba(15,23,42,.05),0 1px 3px rgba(15,23,42,.06),0 2px 8px rgba(15,23,42,.05);
+  --sh-3:0 12px 28px -6px rgba(15,23,42,.16),0 4px 12px -4px rgba(15,23,42,.10);
+  --sh-2:0 6px 16px -4px rgba(15,23,42,.14),0 2px 6px -2px rgba(15,23,42,.08);
   --ring:0 0 0 1px rgba(15,23,42,.045);
 
   --font-display:'Baloo 2','HarmonyOS Sans SC','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;
@@ -48,7 +55,9 @@ const STYLES = String.raw`
   --glass:1; --glass-blur:18px; --surface-alpha:.72;
   --bg:linear-gradient(150deg,#eaf6fb 0%,#f4f8fc 45%,#eef4fb 100%);
   --card:rgba(255,255,255,.72);
-  --brand:#0e8fc4; --brand-2:#29c2f0;
+  --brand:#0a76a8; --brand-2:#29c2f0;
+  /* 本皮肤强制浅色卡片，若 HA 是深色主题会继承浅色文字 → 必须写死深色文字 */
+  --text:#0f2b3d; --text2:#4a6478; --divider:rgba(15,60,90,.12);
   --accent-glow:0 4px 14px rgba(14,143,196,.28);
   --sh-2:0 10px 30px -6px rgba(14,143,196,.22),0 2px 8px -2px rgba(15,23,42,.08);
 }
@@ -60,15 +69,18 @@ const STYLES = String.raw`
   --text:#e8eef6; --text2:#93a4b8; --divider:rgba(255,255,255,.10);
   --brand:#38d6f5; --brand-2:#5ce1c0;
   --brand-soft:rgba(56,214,245,.14); --brand-line:rgba(56,214,245,.30);
+  --on-brand:#06212b;          /* 白字压浅青=1.62:1 → 深青=9.61:1 */
   --accent-glow:0 4px 16px rgba(56,214,245,.35);
+  --sh-1:0 1px 2px rgba(0,0,0,.30),0 2px 6px rgba(0,0,0,.22);
   --sh-2:0 12px 34px -8px rgba(0,0,0,.6),0 2px 8px -2px rgba(0,0,0,.4);
+  --sh-3:0 16px 40px -8px rgba(0,0,0,.72),0 4px 14px -4px rgba(0,0,0,.5);
   --ring:0 0 0 1px rgba(255,255,255,.07);
 }
 /* ============ 皮肤：暖砂（浅色·暖调柔和）============ */
 :host([data-skin="sand"]){
   --bg:linear-gradient(160deg,#fdf8f2 0%,#fbf3ea 50%,#f7efe4 100%);
   --card:rgba(255,253,250,.86);
-  --text:#3d3226; --text2:#8a7a68; --divider:rgba(120,95,70,.14);
+  --text:#3d3226; --text2:#6f6053; --divider:rgba(120,95,70,.14);
   --brand:#c8763c; --brand-2:#e0a066;
   --brand-soft:rgba(200,118,60,.12); --brand-line:rgba(200,118,60,.26);
   --accent-glow:0 4px 14px rgba(200,118,60,.22);
@@ -79,13 +91,16 @@ const STYLES = String.raw`
   --glass:1; --glass-blur:16px; --surface-alpha:.70;
   --bg:linear-gradient(155deg,#eef7f0 0%,#e8f2ec 50%,#e3efe7 100%);
   --card:rgba(252,255,253,.74);
-  --text:#22362c; --text2:#6f8a7c; --divider:rgba(60,100,80,.14);
+  --text:#22362c; --text2:#557063; --divider:rgba(60,100,80,.14);
   --brand:#2fa563; --brand-2:#57c48c;
   --brand-soft:rgba(47,165,99,.12); --brand-line:rgba(47,165,99,.26);
   --accent-glow:0 4px 14px rgba(47,165,99,.24);
 }
 
 *{box-sizing:border-box}
+/* 键盘焦点：此前只有 outline:none + 10% 透明度的环，键盘用户几乎看不见 */
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r-sm)}
 :host{
   display:block;
   background:var(--bg);
@@ -108,8 +123,8 @@ const STYLES = String.raw`
 .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-display);
   font-weight:700;font-size:17px;letter-spacing:.2px;flex:none}
 .brand .logo{
-  width:36px;height:36px;border-radius:12px;display:grid;place-items:center;
-  background:linear-gradient(140deg,var(--brand-2),var(--brand));color:#fff;font-size:18px;
+  width:36px;height:36px;border-radius:var(--r-md);display:grid;place-items:center;
+  background:linear-gradient(140deg,var(--brand-2),var(--brand));color:var(--on-brand);font-size:18px;
   box-shadow:var(--accent-glow),inset 0 1px 0 rgba(255,255,255,.28);
 }
 .brand .sub{font-family:var(--font-body);font-weight:500;font-size:12px;color:var(--text2)}
@@ -144,10 +159,10 @@ const STYLES = String.raw`
 .acct:hover{background:var(--brand-soft);color:var(--text)}
 .acct.on{background:var(--brand-soft);color:var(--brand);border-color:var(--brand-line)}
 .acct .av{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
-  background:linear-gradient(140deg,var(--brand-2),var(--brand));color:#fff;
+  background:linear-gradient(140deg,var(--brand-2),var(--brand));color:var(--on-brand);
   font-size:10.5px;font-weight:700;flex:none}
 .acct .badge{font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;
-  background:var(--brand);color:#fff}
+  background:var(--brand);color:var(--on-brand)}
 
 /* ========== 主体 ========== */
 .body{flex:1;display:flex;align-items:flex-start}
@@ -167,13 +182,16 @@ const STYLES = String.raw`
 .nav .sec{margin:18px 13px 7px;font-size:10.5px;font-weight:700;letter-spacing:1.1px;
   color:var(--text2);text-transform:uppercase;opacity:.7}
 .nav .sec:first-child{margin-top:4px}
+/* 桌面用分组侧栏；移动端切到 5 项 + 更多抽屉（由 media 块切换） */
+.nav-mob{display:none}
+.nav-desk{display:block}
 
 .main{flex:1;min-width:0;padding:var(--gap);max-width:1240px;margin:0 auto;width:100%;
   animation:fadeUp .45s cubic-bezier(.22,1,.36,1) both}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;font-weight:700}
+h2.view-title{margin:2px 0 18px;font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:-.2px}
 .vhead{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
-.vhead h2{margin:0;font-family:var(--font-display);font-size:20px;font-weight:700}
+.vhead h2{margin:0;font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:-.2px}
 .vhead .sub{font-size:12px;color:var(--text2)}
 
 /* ========== 卡片 ========== */
@@ -182,10 +200,10 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
   padding:20px;margin-bottom:var(--gap);transition:box-shadow .2s;
   backdrop-filter:blur(calc(var(--glass)*var(--glass-blur)));
   -webkit-backdrop-filter:blur(calc(var(--glass)*var(--glass-blur)))}
-.card:hover{box-shadow:var(--sh-2),var(--ring)}
+.card:hover{box-shadow:var(--sh-3),var(--ring)}
 .card-h{display:flex;align-items:center;gap:10px;margin:0 0 15px;
-  font-family:var(--font-display);font-size:14.5px;font-weight:700}
-.card-h::before{content:"";width:3px;height:15px;border-radius:2px;flex:none;
+  font-family:var(--font-display);font-size:15.5px;font-weight:700}
+.card-h::before{content:"";width:3px;height:15px;border-radius:var(--r-xs);flex:none;
   background:linear-gradient(180deg,var(--brand-2),var(--brand))}
 .card-h .hint{margin-left:auto;font-family:var(--font-body);font-size:12px;
   font-weight:500;color:var(--text2)}
@@ -194,17 +212,20 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .grid.kpi{grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
 
 /* ========== KPI ========== */
-.tile{position:relative;overflow:hidden;border-radius:15px;
+.tile{position:relative;overflow:hidden;border-radius:var(--r-lg);
   box-shadow:var(--sh-1),var(--ring);padding:16px;display:flex;gap:14px;align-items:center;
   background:color-mix(in srgb,var(--card) calc(var(--surface-alpha)*100%),transparent);
   transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s}
 .tile::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--brand);opacity:.85}
-.tile:hover{transform:translateY(-3px);box-shadow:var(--sh-2),var(--ring)}
-.tile .ico{width:44px;height:44px;flex:none;border-radius:13px;display:grid;place-items:center;
+.tile:hover{transform:translateY(-4px);box-shadow:var(--sh-3),var(--ring)}
+.tile .ico{width:44px;height:44px;flex:none;border-radius:var(--r-md);display:grid;place-items:center;
   background:var(--brand-soft);color:var(--brand);font-size:20px}
 .tile .lab{font-size:11.5px;color:var(--text2);margin-bottom:4px;font-weight:500}
-.tile .val{font-family:var(--font-display);font-size:21px;font-weight:700;line-height:1.1;
-  letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.tile .val{font-family:var(--font-display);font-size:24px;font-weight:700;line-height:1.1;
+  letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+.tile-link{cursor:pointer}
+.tile-link:hover{transform:translateY(-3px);box-shadow:var(--sh-2),var(--ring)}
+.tile-link:active{transform:translateY(-1px)}
 .tile.warn::before{background:var(--warn)}
 .tile.warn .ico{background:var(--warn-soft);color:var(--warn)}
 .tile.good::before{background:var(--ok)}
@@ -227,7 +248,7 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 
 /* ========== 按钮 ========== */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
-  padding:10px 17px;min-height:42px;border-radius:12px;cursor:pointer;
+  padding:9px 16px;min-height:38px;border-radius:var(--r-sm);cursor:pointer;
   border:1px solid var(--divider);
   background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--text);
   font-family:var(--font-body);font-size:13.5px;font-weight:600;
@@ -235,11 +256,11 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .btn:hover{background:var(--brand-soft);box-shadow:var(--sh-1)}
 .btn:active{transform:scale(.97)}
 .btn.pri{background:linear-gradient(140deg,var(--brand-2),var(--brand));
-  border-color:transparent;color:#fff;box-shadow:var(--accent-glow)}
+  border-color:transparent;color:var(--on-brand);box-shadow:var(--accent-glow)}
 .btn.pri:hover{filter:brightness(1.07)}
-.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:var(--on-brand)}
 .btn.danger:hover{filter:brightness(1.06)}
-.btn.sm{min-height:34px;padding:6px 12px;font-size:12.5px;border-radius:10px}
+.btn.sm{min-height:32px;padding:5px 11px;font-size:12.5px;border-radius:var(--r-sm)}
 .btn[disabled]{opacity:.55;cursor:not-allowed;transform:none}
 .actions{display:flex;flex-wrap:wrap;gap:11px}
 
@@ -255,21 +276,21 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 
 /* 搜索框 */
 .searchbar{display:flex;gap:8px;margin-bottom:16px}
-.searchbar input{flex:1;padding:11px 15px;border-radius:12px;font-size:14px;
+.searchbar input{flex:1;padding:11px 15px;border-radius:var(--r-md);font-size:14px;
   border:1px solid var(--divider);
   background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--text);
   font-family:var(--font-body)}
 .searchbar input:focus{outline:none;border-color:var(--brand);
-  box-shadow:0 0 0 3px var(--brand-soft)}
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 28%,transparent)}
 .searchbar .btn{flex:none}
 
 /* ========== 相册网格 ========== */
-.albums{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
-.alb{position:relative;border-radius:15px;overflow:hidden;cursor:pointer;
+.albums{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+.alb{position:relative;border-radius:var(--r-lg);overflow:hidden;cursor:pointer;
   background:color-mix(in srgb,var(--card) 85%,transparent);
   box-shadow:var(--sh-1),var(--ring);
   transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s}
-.alb:hover{transform:translateY(-3px);box-shadow:var(--sh-2),var(--ring)}
+.alb:hover{transform:translateY(-4px);box-shadow:var(--sh-3),var(--ring)}
 .alb .cov{position:relative;aspect-ratio:1;background:var(--divider);overflow:hidden}
 .alb .cov img{width:100%;height:100%;object-fit:cover;display:block}
 .alb .cov .ph{width:100%;height:100%;display:grid;place-items:center;font-size:30px;
@@ -279,8 +300,8 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .alb .ct{font-size:11.5px;color:var(--text2);margin-top:2px}
 
 /* ========== 照片网格 ========== */
-.phgrid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
-.ph{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;cursor:pointer;
+.phgrid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.ph{position:relative;aspect-ratio:1;border-radius:var(--r-md);overflow:hidden;cursor:pointer;
   background:var(--divider);box-shadow:var(--sh-1);
   transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s}
 .ph:hover{transform:translateY(-3px) scale(1.02);box-shadow:var(--sh-2),var(--ring);z-index:2}
@@ -293,7 +314,7 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
   background-size:220% 100%;animation:shimmer 1.3s linear infinite}
 /* 骨架卡片：比纯色块更有结构感 */
 .skel{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(148px,1fr))}
-.skel i{display:block;aspect-ratio:1;border-radius:14px;background:
+.skel i{display:block;aspect-ratio:1;border-radius:var(--r-md);background:
   linear-gradient(100deg,var(--divider) 30%,color-mix(in srgb,var(--divider) 55%,var(--card)) 50%,var(--divider) 70%);
   background-size:220% 100%;animation:shimmer 1.3s linear infinite}
 @keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
@@ -301,9 +322,9 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 /* 文件行 */
 .filerow{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--divider)}
 .filerow.dir{cursor:pointer}
-.filerow.dir:hover{background:var(--brand-soft);border-radius:10px}
+.filerow.dir:hover{background:var(--brand-soft);border-radius:var(--r-sm)}
 .filerow:last-child{border-bottom:0}
-.filerow .fico{width:34px;height:34px;flex:none;border-radius:10px;display:grid;place-items:center;
+.filerow .fico{width:34px;height:34px;flex:none;border-radius:var(--r-sm);display:grid;place-items:center;
   background:var(--brand-soft);color:var(--brand);font-size:16px}
 .filerow .fmain{flex:1;min-width:0}
 .filerow .fname{font-size:13.5px;font-weight:500;word-break:break-all}
@@ -311,12 +332,12 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .filerow .fsize{font-size:12px;color:var(--text2);flex:none;font-variant-numeric:tabular-nums}
 
 .crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:3px;font-size:13px;margin-bottom:14px}
-.crumbs a{color:var(--brand);cursor:pointer;text-decoration:none;padding:3px 7px;border-radius:7px}
+.crumbs a{color:var(--brand);cursor:pointer;text-decoration:none;padding:3px 7px;border-radius:var(--r-xs)}
 .crumbs a:hover{background:var(--brand-soft)}
 .crumbs .sep{color:var(--text2)}
 
 /* 拖拽上传 */
-.main.dropping{outline:2px dashed var(--brand);outline-offset:-8px;border-radius:14px;
+.main.dropping{outline:2px dashed var(--brand);outline-offset:-8px;border-radius:var(--r-md);
   background:var(--brand-soft)}
 .dropzone{position:fixed;inset:0;z-index:900;display:grid;place-items:center;
   background:color-mix(in srgb,var(--brand) 12%,transparent);pointer-events:none;
@@ -324,25 +345,31 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 
 /* 批量选择 */
 .pickbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;
-  border-radius:12px;background:var(--brand-soft);margin-bottom:12px}
+  border-radius:var(--r-md);background:var(--brand-soft);margin-bottom:12px}
 .pickbar .cnt{font-size:13px;font-weight:600;color:var(--brand)}
 .pickbar .cnt b{font-size:15px}
-.pickbox{width:20px;height:20px;flex:none;border-radius:6px;border:2px solid var(--divider);
+.pickbox{width:20px;height:20px;flex:none;border-radius:var(--r-sm);border:2px solid var(--divider);
   cursor:pointer;display:grid;place-items:center;transition:background .14s,border-color .14s}
 .pickbox:hover{border-color:var(--brand)}
 .pickbox.on{background:var(--brand);border-color:var(--brand)}
-.pickbox.on::after{content:"";width:9px;height:5px;border-left:2px solid #fff;
-  border-bottom:2px solid #fff;transform:rotate(-45deg) translateY(-1px)}
-.filerow.picked{background:var(--brand-soft);border-radius:10px}
+.pickbox.on::after{content:"";width:9px;height:5px;border-left:2px solid var(--on-brand);
+  border-bottom:2px solid var(--on-brand);transform:rotate(-45deg) translateY(-1px)}
+.filerow.picked{background:var(--brand-soft);border-radius:var(--r-sm)}
 .ph.picked{box-shadow:0 0 0 3px var(--brand),var(--sh-2)}
 .ph .pickbox{position:absolute;top:6px;left:6px;z-index:3}
 .filerow.picked .fname{color:var(--brand);font-weight:600}
 
 /* 文件操作：磁贴上的 ⋯ 与操作菜单 */
 .phmenu{position:absolute;top:6px;right:6px;min-height:30px;padding:2px 9px;font-size:15px;
-  border-radius:9px;background:rgba(0,0,0,.55);color:#fff;border:0;opacity:0;
-  transition:opacity .15s;backdrop-filter:blur(4px)}
-.ph:hover .phmenu{opacity:1}
+  border-radius:var(--r-sm);background:rgba(0,0,0,.55);color:#fff;border:0;
+  transition:opacity .15s;backdrop-filter:blur(4px);z-index:4}
+/* ⚠️ 此前 opacity:0 + 仅 .ph:hover 显示 —— 触摸设备没有 hover，图片上的「⋯」
+   永远看不见 → 手机上图片的重命名/移动/复制/删除完全不可达。
+   改为：只有鼠标设备用 hover 显隐，触摸设备默认常显。 */
+@media (hover:hover) and (pointer:fine){
+  .phmenu{opacity:0}
+  .ph:hover .phmenu{opacity:1}
+}
 .menu{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .menu button{width:100%;text-align:left;justify-content:flex-start;gap:9px}
 .menu button.danger{color:var(--danger);border-color:var(--danger-soft)}
@@ -353,7 +380,7 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   animation:vfade .2s ease both;outline:none}
 @keyframes vfade{from{opacity:0}to{opacity:1}}
-.viewer img{max-width:94vw;max-height:78vh;object-fit:contain;border-radius:12px;
+.viewer img{max-width:94vw;max-height:78vh;object-fit:contain;border-radius:var(--r-md);
   box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .viewer .vbar{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;
   padding:14px 18px;color:#fff;font-size:13px}
@@ -372,31 +399,31 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
   animation:vfade .2s ease both;padding:18px}
 .mbox{width:100%;max-width:420px;max-height:88vh;overflow:auto;
   background:color-mix(in srgb,var(--card) 95%,transparent);
-  border-radius:20px;box-shadow:0 24px 60px rgba(10,14,20,.35);padding:24px;
+  border-radius:var(--r-lg);box-shadow:0 24px 60px rgba(10,14,20,.35);padding:24px;
   animation:mup .26s cubic-bezier(.22,1,.36,1) both}
 @keyframes mup{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 .mbox h3{margin:0 0 6px;font-family:var(--font-display);font-size:17px;font-weight:700}
 .mbox p.sub{margin:0 0 18px;font-size:12.5px;color:var(--text2);line-height:1.5}
 .field{margin-bottom:14px}
 .field label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px}
-.field input,.field select{width:100%;padding:11px 13px;border-radius:11px;font-size:14px;
+.field input,.field select{width:100%;padding:11px 13px;border-radius:var(--r-sm);font-size:14px;
   border:1px solid var(--divider);
   background:color-mix(in srgb,var(--card) 85%,transparent);color:var(--text);font-family:var(--font-body)}
 .field input:focus,.field select:focus{outline:none;border-color:var(--brand);
   box-shadow:0 0 0 3px var(--brand-soft)}
 .merr{background:var(--danger-soft);color:var(--danger);font-size:12.5px;font-weight:500;
-  padding:9px 12px;border-radius:10px;margin-bottom:14px}
+  padding:9px 12px;border-radius:var(--r-sm);margin-bottom:14px}
 .mnote{background:var(--brand-soft);color:var(--brand);font-size:12px;padding:9px 12px;
-  border-radius:10px;margin-bottom:14px;line-height:1.5}
+  border-radius:var(--r-sm);margin-bottom:14px;line-height:1.5}
 .mactions{display:flex;gap:10px;margin-top:6px}
 .mactions .btn{flex:1}
 .steps{display:flex;gap:6px;margin-bottom:18px}
-.steps i{flex:1;height:3px;border-radius:2px;background:var(--divider)}
+.steps i{flex:1;height:3px;border-radius:var(--r-xs);background:var(--divider)}
 .steps i.on{background:var(--brand)}
 
 /* ========== 用户 ========== */
 .users{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
-.ucard{border-radius:14px;box-shadow:var(--sh-1),var(--ring);
+.ucard{border-radius:var(--r-md);box-shadow:var(--sh-1),var(--ring);
   background:color-mix(in srgb,var(--card) calc(var(--surface-alpha)*100%),transparent);
   padding:15px;display:flex;gap:12px;align-items:center}
 .ucard .uav{width:40px;height:40px;flex:none;border-radius:50%;display:grid;place-items:center;
@@ -409,16 +436,16 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
 .ucard.admin .utag{background:var(--warn-soft);color:var(--warn)}
 
 /* ========== 其他 ========== */
-.slot{border:1.5px dashed var(--divider);border-radius:15px;padding:28px 18px;text-align:center;
+.slot{border:1.5px dashed var(--divider);border-radius:var(--r-lg);padding:28px 18px;text-align:center;
   color:var(--text2);font-size:13px}
 .slot .em{display:block;font-size:34px;margin-bottom:10px;opacity:.55}
 .slot .tip{display:block;margin-top:6px;font-size:12px;opacity:.8}
 .slot.sm{padding:18px 14px}
 .note{font-size:12px;color:var(--text2);margin-top:12px;line-height:1.6}
-.err{background:var(--danger-soft);color:var(--danger);border-radius:12px;padding:12px 14px;
+.err{background:var(--danger-soft);color:var(--danger);border-radius:var(--r-md);padding:12px 14px;
   font-size:13px;margin-bottom:14px}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:2000;
-  background:var(--brand);color:#fff;padding:10px 18px;border-radius:999px;font-size:13px;
+  background:var(--brand);color:var(--on-brand);padding:10px 18px;border-radius:999px;font-size:13px;
   font-weight:600;box-shadow:var(--sh-2);animation:vfade .2s ease both}
 .more{display:flex;justify-content:center;margin-top:16px}
 
@@ -437,29 +464,44 @@ h2.view-title{margin:2px 0 16px;font-family:var(--font-display);font-size:20px;f
     backdrop-filter:blur(16px) saturate(1.5);-webkit-backdrop-filter:blur(16px) saturate(1.5);
     box-shadow:0 -6px 20px rgba(15,23,42,.10)}
   .nav .sec{display:none}
-  .nav button{flex:1;min-width:60px;flex-direction:column;gap:3px;padding:7px 4px;
-    font-size:10.5px;text-align:center;margin:0;border-radius:11px}
+  .nav-desk{display:none}
+  .nav-mob{display:flex;width:100%;align-items:center;gap:2px}
+  /* 「更多」抽屉：展开时在底栏之上横排显示任务/设备/用户/配置 */
+  .morebar{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-top:1px solid var(--divider);width:100%}
+  .morebar .btn{flex:0 0 auto;min-height:40px}
+  /* ⚠️ 8 项 ×60px + gap ≈ 509px > 414px 屏宽 → 必定横滑，第 6–8 项看不见。
+     改为 5 个主入口 + 「更多」抽屉（见 _renderNav 的移动端分组）。 */
+  .nav button{flex:1;min-width:0;flex-direction:column;gap:3px;padding:8px 2px;
+    font-size:11px;text-align:center;margin:0;border-radius:var(--r-md);
+    min-height:48px;justify-content:center}
   .nav button:hover{transform:none}
-  .nav button.active{box-shadow:none}
-  .nav button .ico{font-size:19px}
+  /* 移动端恢复 active 描边（此前 box-shadow:none → 完全看不出当前在哪一页） */
+  .nav button.active{background:var(--brand-soft);color:var(--brand);
+    box-shadow:inset 0 0 0 1.5px var(--brand-line)}
+  .nav button .ico{font-size:21px;line-height:1}
   .main{padding:14px 13px calc(92px + env(safe-area-inset-bottom))}
   h2.view-title,.vhead h2{font-size:18px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
   .grid.kpi{grid-template-columns:repeat(2,1fr);gap:10px}
-  .tile{padding:13px;border-radius:14px}
+  .tile{padding:13px;border-radius:var(--r-md)}
   .tile .val{font-size:19px}
-  .card{padding:15px;border-radius:16px;margin-bottom:14px}
+  .card{padding:15px;border-radius:var(--r-md);margin-bottom:14px}
   .row .k{min-width:88px;font-size:12px}
   .row .v{font-size:12.5px}
-  .btn{flex:1;min-width:calc(50% - 6px)}
-  .albums{grid-template-columns:repeat(3,1fr);gap:8px}
+  .btn{flex:1;min-width:calc(50% - 6px);min-height:44px}
+  .btn.sm{min-height:40px;padding:8px 14px}
+  /* 复选框视觉 24px，热区外扩到 ~44px（此前仅 20px，手机上极难点中） */
+  .pickbox{width:24px;height:24px;position:relative}
+  .pickbox::before{content:"";position:absolute;inset:-10px}
+  .phmenu{min-height:36px;padding:4px 11px;font-size:16px}
+  .albums{grid-template-columns:repeat(2,1fr);gap:10px}
   .alb .meta{padding:7px 8px 9px}
   .alb .nm{font-size:12px}
-  .phgrid{grid-template-columns:repeat(3,1fr);gap:6px}
+  .phgrid{grid-template-columns:repeat(2,1fr);gap:8px}
   .users{grid-template-columns:repeat(2,1fr);gap:10px}
   .ucard{padding:12px}
   .modal{align-items:flex-end;padding:0}
-  .mbox{max-width:none;border-radius:20px 20px 0 0;max-height:92vh;
+  .mbox{max-width:none;border-radius:var(--r-lg) 20px 0 0;max-height:92vh;
     padding-bottom:calc(24px + env(safe-area-inset-bottom))}
   .viewer .nav{width:40px;height:40px}
   .searchbar{flex-wrap:wrap}
@@ -496,7 +538,7 @@ const maskSn = (sn) => {
 };
 
 /* ===================== 状态 ===================== */
-const PH = { path: "/file/", space: "user", data: null, upload: null };
+const PH = { path: "/file/", space: "user", data: null, upload: null, uploads: [] };
 const TASK = { src: "filesvc", data: null, err: "", counts: {} };
 
 /* ============ 重复照片扫描 ============ */
@@ -504,6 +546,15 @@ const DUP = { taskId: null, res: null, busy: false, err: "" };
 
 /* ============ 设备诊断（错误码 / 维修模式 / Samba）============ */
 const DIAG = { res: null, busy: false, err: "" };
+
+/** 多文件整体进度（按字节，不按文件数）。 */
+function uploadPct() {
+  const us = PH.uploads || [];
+  if (!us.length) return 0;
+  let tot = 0, done = 0;
+  for (const u of us) { tot += u.total || 0; done += u.done || 0; }
+  return tot ? Math.min(100, Math.round((done / tot) * 100)) : 0;
+}
 
 function renderDiag() {
   if (DIAG.err) return `<div class="err">${esc(DIAG.err)}</div>`;
@@ -601,7 +652,14 @@ async function dupResult() {
 }
 
 /* ============ 批量选择（多选后批量操作）============ */
-const PICK = { on: false, set: new Set(), base: "/file/" };
+const PICK = { on: false, set: new Set(), base: "/file/", last: null };
+
+/** 当前列表所有可勾选路径（顺序稳定，供 Shift 范围选择用）。 */
+function pickAllPaths() {
+  const base = PH.path || "/file/";
+  const files = (PH.data && PH.data.files) || [];
+  return files.map((f) => base + f.name + (f.type === 8 ? "" : "/"));
+}
 
 function pickCount() { return PICK.set.size; }
 
@@ -637,15 +695,16 @@ async function pickRun(op) {
   if (op === "delete") {
     if (!window.confirm("删除选中的 " + ids.length + " 项？\n\n会移入设备回收站，可恢复。")) return;
   } else {
-    const dest = window.prompt("目标文件夹（需以 /file/ 开头且已存在）：", PICK.base);
-    if (!dest) return;
-    try {
-      await svc(op === "move" ? "move_paths" : "copy_paths",
-                { paths: ids, dest_dir: dest, category: curSpace() });
-      toast("已" + label + " " + ids.length + " 项");
-      PICK.on = false; PICK.set.clear();
-      loadFiles();
-    } catch (e) { toast(label + "失败：" + String(e.message || e)); }
+    // 用目录选择器代替手输路径（手打 /file/xxx/ 容易错）
+    openDestPicker(async (dest) => {
+      try {
+        await svc(op === "move" ? "move_paths" : "copy_paths",
+                  { paths: ids, dest_dir: dest, category: curSpace() });
+        toast("已" + label + " " + ids.length + " 项");
+        PICK.on = false; PICK.set.clear();
+        loadFiles();
+      } catch (e) { toast(label + "失败：" + String(e.message || e)); }
+    });
     return;
   }
   try {
@@ -776,36 +835,61 @@ function releaseImagesIn(root) {
   root.querySelectorAll("img[data-blob-url]").forEach(releaseImageBlob);
 }
 
+/* 模块级 observer：**必须复用并清理**。
+   此前每次 queueImages 都 new 两个 IntersectionObserver 且从不 disconnect ——
+   而 queueImages 在每次 _draw 都调用，来回切视图会累积几十上百个 observer（内存泄漏）。 */
+let _ioLoad = null;      // 进入可视区 → 加入加载队列
+let _ioRecycle = null;   // 离屏 → 回收 blob
+let _ioLastRoot = null;
+
+function _ensureObservers() {
+  if (!_ioLoad) {
+    _ioLoad = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        const img = en.target;
+        _ioLoad.unobserve(img);
+        IMG_QUEUE.push({ img, url: img.dataset.src });
+        pumpImages();
+      });
+    }, { rootMargin: "300px" });
+
+    // 离屏回收：释放已加载图的 blob，避免长列表无限增长内存。
+    // 注意 rootMargin 比加载的小（0 vs 300），避免在预加载区来回抖动。
+    _ioRecycle = new IntersectionObserver((ents) => {
+      ents.forEach((en) => {
+        const img = en.target;
+        if (en.isIntersecting) return;
+        if (img.dataset.loaded === "1" && img.dataset.src) {
+          releaseImageBlob(img);
+          img.removeAttribute("src");
+          img.dataset.loaded = "0";
+        }
+      });
+    }, { rootMargin: "0px", threshold: 0 });
+  }
+}
+
 function queueImages(root) {
+  if (!root || !root.querySelectorAll) return;
   const imgs = [...root.querySelectorAll("img[data-src]")];
   if (!imgs.length) return;
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach((en) => {
-      if (!en.isIntersecting) return;
-      const img = en.target;
-      io.unobserve(img);
-      IMG_QUEUE.push({ img, url: img.dataset.src });
-      pumpImages();
-    });
-  }, { rootMargin: "300px" });
-  imgs.forEach((im) => io.observe(im));
+  _ensureObservers();
+  // 换了渲染根节点 → 旧节点的监听已随 DOM 移除，解绑避免残留引用
+  if (_ioLastRoot && _ioLastRoot !== root) {
+    try { _ioLoad.disconnect(); _ioRecycle.disconnect(); } catch (e) { /* 已断开 */ }
+    _ioLoad = null; _ioRecycle = null;
+    _ensureObservers();
+  }
+  _ioLastRoot = root;
+  imgs.forEach((im) => { _ioLoad.observe(im); _ioRecycle.observe(im); });
+}
 
-  // 性能：离屏已加载的图释放 src（保留占位），避免大相册无限增长内存。
-  // 只处理**不在可视区**的已加载图，且仍在 DOM 中的才回收。
-  if (!root.querySelectorAll) return;
-  const recycle = new IntersectionObserver((ents) => {
-    ents.forEach((en) => {
-      const img = en.target;
-      if (en.isIntersecting) return;
-      // 离屏且已加载 → 回收内存（再次进入可视区会重新触发 data-src 加载）
-      if (img.dataset.loaded === "1" && img.dataset.src) {
-        releaseImageBlob(img);
-        img.removeAttribute("src");
-        img.dataset.loaded = "0";
-      }
-    });
-  }, { rootMargin: "0px", threshold: 0 });
-  root.querySelectorAll("img[data-src]").forEach((im) => recycle.observe(im));
+/** 组件卸载/离开时彻底清理 observer（配合 disconnectedCallback）。 */
+function cleanupImages() {
+  try { if (_ioLoad) _ioLoad.disconnect(); if (_ioRecycle) _ioRecycle.disconnect(); } catch (e) { /* 已断开 */ }
+  _ioLoad = null; _ioRecycle = null; _ioLastRoot = null;
+  IMG_QUEUE.length = 0;
 }
 
 /* ===================== 视图 ===================== */
@@ -819,34 +903,38 @@ function renderOverview(d) {
   const online = !!d.online;
   const albums = (c.face_albums || 0) + (c.place_albums || 0) + (c.scene_albums || 0);
 
+  // 概览既是看板也是入口：卡片可点（data-act="nav"），直接跳对应视图。
+  // 原来的「浏览相册/浏览文件」按钮已删 —— 它们和侧栏导航完全重复。
   return `
     <h2 class="view-title">概览</h2>
-    <div class="card">
-      <div class="card-h">💾 存储容量
+    <div class="card tile-link" data-act="nav" data-view="files">
+      <div class="card-h">存储容量
         <span class="hint">${fmtSize(dk.used || 0)} / ${fmtSize(dk.total || 0)}</span></div>
-      <div style="font-family:var(--font-display);font-size:30px;font-weight:700">
+      <div style="font-family:var(--font-display);font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px">
         ${pct}%<span style="font-size:14px;font-weight:500;color:var(--text2);margin-left:8px">
         已使用</span></div>
       <div class="bar ${cls}"><i style="width:${pct}%"></i></div>
       <div style="display:flex;gap:18px;margin-top:12px;font-size:12.5px;color:var(--text2)">
         <span>已用 <b style="color:var(--text)">${fmtSize(dk.used || 0)}</b></span>
         <span>可用 <b style="color:var(--text)">${fmtSize(dk.free || 0)}</b></span>
+        <span style="margin-left:auto;color:var(--brand)">查看文件</span>
       </div>
     </div>
 
     <div class="grid kpi">
-      <div class="tile"><div class="ico">🖼️</div><div>
-        <div class="lab">照片</div><div class="val">${c.photos ?? "—"}</div></div></div>
-      <div class="tile"><div class="ico">🎬</div><div>
-        <div class="lab">视频</div><div class="val">${c.videos ?? "—"}</div></div></div>
-      <div class="tile"><div class="ico">📄</div><div>
-        <div class="lab">文件</div><div class="val">${c.all_files ?? "—"}</div></div></div>
-      <div class="tile ${online ? "good" : "danger"}"><div class="ico">📶</div><div>
+      <div class="tile tile-link" data-act="nav" data-view="albums"><div class="ico">IMG</div><div>
+        <div class="lab">照片</div><div class="val">${c.photos ?? "-"}</div></div></div>
+      <div class="tile tile-link" data-act="nav" data-view="albums"><div class="ico">VID</div><div>
+        <div class="lab">视频</div><div class="val">${c.videos ?? "-"}</div></div></div>
+      <div class="tile tile-link" data-act="nav" data-view="files"><div class="ico">DOC</div><div>
+        <div class="lab">文件</div><div class="val">${c.all_files ?? "-"}</div></div></div>
+      <div class="tile tile-link ${online ? "good" : "danger"}" data-act="nav" data-view="device">
+        <div class="ico">NET</div><div>
         <div class="lab">设备状态</div><div class="val">${online ? "在线" : "离线"}</div></div></div>
-      <div class="tile"><div class="ico">👥</div><div>
+      <div class="tile tile-link" data-act="nav" data-view="users"><div class="ico">USR</div><div>
         <div class="lab">设备用户</div><div class="val">${(d.device_users || []).length}</div></div></div>
-      <div class="tile"><div class="ico">🗂️</div><div>
-        <div class="lab">智能相册</div><div class="val">${albums || "—"}</div></div></div>
+      <div class="tile tile-link" data-act="nav" data-view="albums"><div class="ico">ALB</div><div>
+        <div class="lab">智能相册</div><div class="val">${albums || "-"}</div></div></div>
     </div>
 
     ${(c.duplicate_photos || DUP.taskId || DUP.res) ? `<div class="card" style="margin-top:var(--gap)">
@@ -855,13 +943,13 @@ function renderOverview(d) {
       ${renderDup()}
     </div>` : ""}
     <div class="card" style="margin-top:var(--gap)">
-      <div class="card-h">⚡ 快捷操作</div>
+      <div class="card-h">操作</div>
       <div class="actions">
-        <button class="btn pri" data-act="go-albums">🖼️ 浏览相册</button>
-        <button class="btn" data-act="go-files">📁 浏览文件</button>
-        <button class="btn" data-act="refresh">🔄 刷新凭据</button>
+        <button class="btn pri" data-act="refresh">刷新凭据</button>
         <button class="btn" data-act="dup">扫描重复照片</button>
+        <button class="btn sm" data-act="dup-res">查看结果</button>
       </div>
+      <div class="note">导航直接点上面的卡片：容量/文件→文件，照片/视频/智能相册→相册，状态→设备，用户→用户。</div>
     </div>`;
 }
 
@@ -958,14 +1046,30 @@ function renderAlbumDetail() {
     </div>
     ${ALB.err ? `<div class="err">${esc(ALB.err)}</div>` : ""}
     ${pickToggleBar()}
+    ${PICK.on ? `<div class="pickbar">
+      <span class="cnt">已选 <b>${pickCount()}</b> 张</span>
+      <button class="btn sm" data-act="pick-all-photos">全选</button>
+      <button class="btn sm" data-act="pick-none">取消</button>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn sm pri" data-act="album-add-picked"
+        ${pickCount() ? "" : "disabled"}>加入相册</button>
+      <button class="btn sm" data-act="album-share-picked"
+        ${pickCount() ? "" : "disabled"}>共享给家人</button>
+      <button class="btn sm" data-act="pick-off">退出</button>
+    </div>` : ""}
     ${photos.length ? `<div class="phgrid">
-      ${photos.map((p, i) => `
-        <div class="ph" data-act="photo-open" data-idx="${i}">
+      ${photos.map((p, i) => {
+        const pth = "photo:" + i;
+        const on = PICK.set.has(pth);
+        return `<div class="ph ${on ? "picked" : ""}" data-act="photo-open" data-idx="${i}">
+          ${PICK.on ? `<span class="pickbox ${on ? "on" : ""}" data-act="pick" data-path="${esc(pth)}"></span>` : ""}
           ${p.thumbUrl ? `<img data-src="${esc(p.thumbUrl)}" alt="" style="opacity:0">`
                        : `<div class="sk"></div>`}
           ${p.mtime ? `<span class="cap">${esc(fmtDate(p.mtime).slice(5, 16))}</span>` : ""}
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
     </div>` : `<div class="slot">正在载入照片…</div>`}
+    ${renderAlbumOp()}
     ${(ALB.next && (ALB.next.last_cre_time || ALB.next.last_row_id))
       ? `<div class="more"><button class="btn" data-act="alb-more"
            ${ALB.loading ? "disabled" : ""}>${ALB.loading ? "载入中…" : "加载更多"}</button></div>`
@@ -998,6 +1102,9 @@ async function openAlbum(type, id, name) {
 async function loadAlbumPage(append) {
   const eid = window.__hs_entry_id || "";
   if (!eid || !ALB.album) return;
+  // ⚠️ 竞态防护：记录发起请求时的「相册 + 账号」快照。此前只校验 _view==="albums" ——
+  // A→B 快切时两者都是 albums 视图，慢的旧请求返回后会覆盖新相册的照片（串数据）。
+  const snapKey = String(ALB.album.type) + ":" + String(ALB.album.id) + ":" + String(SEL.account || "");
   ALB.loading = true;
   try {
     const q = new URLSearchParams({ num: "100" });
@@ -1008,6 +1115,11 @@ async function loadAlbumPage(append) {
     }
     const res = await apiGet(`/api/huawei_home_storage/album/${encodeURIComponent(eid)}`
       + `/${ALB.album.type}/${ALB.album.id}?${q}`);
+    // 期间切了相册/账号 → 丢弃本次结果，避免串数据
+    const nowKey = ALB.album
+      ? String(ALB.album.type) + ":" + String(ALB.album.id) + ":" + String(SEL.account || "")
+      : null;
+    if (nowKey !== snapKey) { ALB.loading = false; return; }
     ALB.photos = append ? ALB.photos.concat(res.photos || []) : (res.photos || []);
     ALB.next = res.next || null;
   } catch (e) {
@@ -1037,15 +1149,23 @@ function renderFiles(d) {
         <button class="btn sm pri" data-act="fs-upload">⬆ 上传文件</button>
         <input type="file" id="fsFile" style="display:none">` : ""}
     </div>
+    ${renderDestPicker()}
     ${pickToggleBar()}
-    ${PH.upload ? `<div class="card" style="padding:12px 16px">
-      <div style="display:flex;align-items:center;gap:10px;font-size:12.5px">
-        <b>${esc(PH.upload.name)}</b>
-        <span style="color:var(--text2)">${fmtSize(PH.upload.done)} / ${fmtSize(PH.upload.total)}</span>
+        ${(PH.uploads && PH.uploads.length) || true ? `<div class="note" style="margin-bottom:12px;color:var(--text2)">
+      上传到「文件空间」，<b>不会自动出现在相册里</b> —— 两者是设备上的独立存储。
+      想放进相册：到相册页勾选已有照片 → 「加入相册」。
+    </div>` : ""}
+${(PH.uploads && PH.uploads.length) ? `<div class="card" style="padding:12px 16px">
+      <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;margin-bottom:8px">
+        <b>上传 ${PH.uploads.length} 个文件</b>
         <span style="flex:1"></span>
-        <span style="color:var(--brand);font-weight:600">${PH.upload.pct}%</span>
+        <span style="color:var(--brand);font-weight:600">${uploadPct()}%</span>
       </div>
-      <div class="bar"><i style="width:${PH.upload.pct}%"></i></div>
+      <div class="bar"><i style="width:${uploadPct()}%"></i></div>
+      <div class="note" style="margin-top:8px">
+        ${PH.uploads.map((u) => `<div>${u.done >= u.total ? "✓" : "…"} ${esc(u.name)}
+          <span style="color:var(--text2)">${fmtSize(u.done)}/${fmtSize(u.total)}</span></div>`).join("")}
+      </div>
     </div>` : ""}
     <div id="fsBody"><div class="slot sm">载入中…</div></div>`;
 }
@@ -1149,6 +1269,8 @@ function renderFileList(res) {
         <span class="fmain"><span class="fname">${esc(f.name)}</span>
           <span class="fsub">${esc(fmtDate(f.mtime))}</span></span>
         <span class="fsize">${fmtSize(f.size)}</span>
+        <button class="btn sm" data-act="row-dl" data-path="${esc(pth)}"
+          data-name="${esc(f.name)}">下载</button>
         <button class="btn sm" data-act="row-menu" data-name="${esc(f.name)}"
           data-path="${esc(pth)}" data-dir="0">⋯</button></div>`;
       }).join("")}
@@ -1302,16 +1424,15 @@ function openRowMenu({ name, path, isDir }) {
           },
         });
       } else if (op === "move" || op === "copy") {
-        openPrompt({
-          title: op === "move" ? "移动到" : "复制到",
-          label: "目标文件夹", value: dir,
-          hint: "目标目录必须已存在（目录需带尾斜杠）。",
-          onOk: async (dest) => {
-            const d = dest.endsWith("/") ? dest : dest + "/";
+        openDestPicker(async (dest) => {
+          try {
             await svc(op === "move" ? "move_paths" : "copy_paths",
-                      { paths: [path], dest_dir: d, category: curSpace() });
-            toast(op === "move" ? "已移动" : "已复制"); loadFiles();
-          },
+                      { paths: [path], dest_dir: dest, category: curSpace() });
+            toast(op === "move" ? "已移动" : "已复制");
+            loadFiles();
+          } catch (e) {
+            toast((op === "move" ? "移动" : "复制") + "失败：" + String(e.message || e));
+          }
         });
       } else if (op === "delete") {
         if (!window.confirm(`删除「${name}」？\n\n会移入回收站，可从「最近删除」恢复。`)) return;
@@ -1380,14 +1501,20 @@ async function doUpload(file) {
   const dest = PH.path + file.name;
   const url = `/api/huawei_home_storage/upload/${encodeURIComponent(eid)}`
     + `?path=${encodeURIComponent(dest)}&space=${encodeURIComponent(curSpace())}`;
-  PH.upload = { name: file.name, done: 0, total: file.size, pct: 0 };
+  // 多文件：每个文件一条记录（数组），整体进度由 uploadPct() 汇总
+  const rec = { name: file.name, done: 0, total: file.size, pct: 0 };
+  PH.uploads = PH.uploads || [];
+  PH.uploads.push(rec);
+  PH.upload = rec;   // 兼容旧引用
   if (panel) panel._draw();
 
   const finish = (ok, msg) => {
-    PH.upload = null;
+    // 只移除本条；全部结束才清空数组（避免多文件互相清掉进度）
+    PH.uploads = (PH.uploads || []).filter((x) => x !== rec);
+    PH.upload = PH.uploads.length ? PH.uploads[PH.uploads.length - 1] : null;
     if (panel) panel._draw();
     toast(msg);
-    if (ok) loadFiles();
+    if (ok && !PH.uploads.length) loadFiles();
   };
 
   // 用 XHR 才能拿到上传进度（fetch 没有 progress 事件）
@@ -1567,15 +1694,173 @@ async function cleanTasks(ids, label) {
   }
 }
 
+/* ---------- 目录选择器（替代手输路径）---------- */
+const DEST = { open: false, dirs: [], busy: false, err: "", cur: "/file/", cb: null };
+
+async function openDestPicker(cb) {
+  const panel = window.__hs_panel;
+  DEST.open = true; DEST.cb = cb; DEST.err = ""; DEST.cur = PH.path || "/file/";
+  await loadDestDirs(DEST.cur);
+  if (panel) panel._draw();
+}
+
+async function loadDestDirs(path) {
+  const panel = window.__hs_panel;
+  DEST.busy = true; DEST.err = "";
+  if (panel) panel._draw();
+  try {
+    const eid = window.__hs_entry_id || "";
+    const q = `path=${encodeURIComponent(path)}&space=${encodeURIComponent(curSpace())}`;
+    const res = await apiGet(`/api/huawei_home_storage/files/${encodeURIComponent(eid)}?${q}`);
+    DEST.dirs = (res.files || []).filter((f) => f.type !== 8).map((f) => ({
+      name: f.name, path: path + f.name + "/",
+    }));
+    DEST.cur = path;
+  } catch (e) { DEST.err = String(e.message || e); DEST.dirs = []; }
+  DEST.busy = false;
+  if (panel) panel._draw();
+}
+
+function renderDestPicker() {
+  if (!DEST.open) return "";
+  const parent = DEST.cur.replace(/[^/]+\/$/, "") || "/file/";
+  return `<div class="modal">
+    <div class="mbox">
+      <h3>选择目标文件夹</h3>
+      <p class="sub">当前：${esc(DEST.cur)}（点文件夹进入，点「选这里」确认）</p>
+      ${DEST.err ? `<div class="err">${esc(DEST.err)}</div>` : ""}
+      ${DEST.busy ? '<div class="slot sm">载入中…</div>' : `
+        ${DEST.cur !== "/file/" ? `<div class="filerow dir" data-act="dest-go" data-path="${esc(parent)}">
+          <span class="fico">[..]</span>
+          <span class="fmain"><span class="fname">上一级</span></span></div>` : ""}
+        ${DEST.dirs.length ? DEST.dirs.map((d) => `<div class="filerow dir" data-act="dest-go" data-path="${esc(d.path)}">
+          <span class="fico">[D]</span>
+          <span class="fmain"><span class="fname">${esc(d.name)}</span></span></div>`).join("")
+          : '<div class="slot sm">该目录下没有子文件夹</div>'}
+      `}
+      <div class="mactions">
+        <button class="btn" data-act="dest-cancel">取消</button>
+        <button class="btn pri" data-act="dest-ok">选这里</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+
+/* ---------- 加入相册 / 共享给家人（相册域 fileId）---------- */
+let MORE_OPEN = false;   /* 移动端「更多」抽屉是否展开 */
+const ALBOP = { open: false, mode: "", files: [], albums: [], busy: false, err: "" };
+
+/** 当前选中的照片（相册域 fileId）。 */
+function pickedPhotoIds() {
+  const out = [];
+  for (const key of PICK.set) {
+    if (!key.startsWith("photo:")) continue;
+    const idx = Number(key.slice(6));
+    const p = (ALB.photos || [])[idx];
+    if (p && (p.fileId || p.id)) out.push(p.fileId || p.id);
+  }
+  return out;
+}
+
+async function openAlbumOp(mode) {
+  const panel = window.__hs_panel;
+  const ids = pickedPhotoIds();
+  if (!ids.length) { toast("请先选择照片"); return; }
+  // 目标相册：用户自建相册(type=6)才是能"加入"的
+  const groups = (ALB.data && ALB.data.groups) || [];
+  const userGroup = groups.find((g) => g.key === "user");
+  ALBOP.open = true; ALBOP.mode = mode; ALBOP.files = ids;
+  ALBOP.albums = (userGroup && userGroup.albums) || [];
+  ALBOP.err = "";
+  if (panel) panel._draw();
+}
+
+function renderAlbumOp() {
+  if (!ALBOP.open) return "";
+  const isAdd = ALBOP.mode === "add";
+  return `<div class="modal"><div class="mbox">
+    <h3>${isAdd ? "加入相册" : "共享给家人"}</h3>
+    <p class="sub">已选 ${ALBOP.files.length} 张 · 选择目标相册</p>
+    ${ALBOP.err ? `<div class="err">${esc(ALBOP.err)}</div>` : ""}
+    ${!ALBOP.albums.length
+      ? '<div class="slot sm">没有可用的相册（仅用户自建相册可加入）</div>'
+      : `<div>${ALBOP.albums.map((x) => `<div class="filerow dir" data-act="albop-ok"
+          data-id="${x.id}" data-name="${esc(x.name)}">
+          <span class="fico">[]</span>
+          <span class="fmain"><span class="fname">${esc(x.name)}</span>
+            <span class="fsub">${x.count} 张 · 归属 ${esc(String(x.ownerId || (x.userIds || [])[0] || "-"))}</span></span></div>`).join("")}</div>`}
+    <div class="mactions"><button class="btn" data-act="albop-cancel">取消</button></div>
+  </div></div>`;
+}
+
+/** 执行加入/共享。fileId 必须是**相册域**的，不是文件空间 fid。 */
+async function runAlbumOp(albumId, albumName) {
+  const panel = window.__hs_panel;
+  const ids = ALBOP.files;
+  const isAdd = ALBOP.mode === "add";
+  if (!ids.length || !albumId) return;
+  try {
+    if (isAdd) {
+      await albumAddTo(albumId, 6, ids, albumName);
+    } else {
+      // 共享需要 ownerId（设备家庭成员 id）。
+      // ⚠️ 不能从 device_users 取 —— 后端为隐私把它脱敏成空 dict。
+      // 相册数据自带 ownerId（实测 10001/10002），用目标相册的归属人。
+      const target = (ALBOP.albums || []).find((x) => String(x.id) === String(albumId));
+      const ownerId = target && (target.ownerId || (target.userIds || [])[0]);
+      if (!ownerId) {
+        ALBOP.err = "该相册没有归属人信息，无法共享";
+        if (panel) panel._draw();
+        return;
+      }
+      await albumShareToPerson(albumId, ownerId, ids, albumName);
+    }
+    ALBOP.open = false;
+    PICK.set.clear(); PICK.on = false;
+    if (panel) { panel._draw(); loadAlbumPage(false); }
+  } catch (e) {
+    ALBOP.err = String(e.message || e);
+    if (panel) panel._draw();
+  }
+}
+
+/* ---------- 文件下载 ---------- */
+async function downloadFile(path, name) {
+  // ⚠️ <a download> 直链不带 HA 鉴权头，设备会拒绝。
+  // 先 fetchWithAuth 拿到 blob，再转临时 URL 触发下载。
+  try {
+    const h = hassOf();
+    const eid = window.__hs_entry_id || "";
+    const url = `/api/huawei_home_storage/image/${encodeURIComponent(eid)}/raw${path}`;
+    toast("准备下载…");
+    const r = await h.fetchWithAuth(url);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = u;
+    a.download = name || "download";
+    (document.body || document.documentElement).appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 30000);
+    toast("已开始下载 " + (name || ""));
+  } catch (err) {
+    toast("下载失败：" + String(err.message || err));
+  }
+}
+
 /* ---------- 搜索（文件空间）---------- */
 function renderSearch() {
   return `
     <div class="vhead"><h2>搜索</h2>
       <span class="sub">按关键字查找文件空间</span></div>
     <div class="searchbar">
-      <input id="kwInput" type="text" placeholder="输入关键字后回车"
+      <input id="kwInput" type="text" placeholder="输入关键字后按回车"
         value="${esc(SRC.kw)}" autocomplete="off">
       <button class="btn pri" data-act="search-go">搜索</button>
+      ${SRC.kw ? `<button class="btn sm" data-act="search-clear">清空</button>` : ""}
     </div>
     ${renderSearchBody()}`;
 }
@@ -1683,9 +1968,8 @@ function renderDevice(d) {
     <div class="card">
       <div class="card-h">设备操作</div>
       <div class="actions">
-        <button class="btn" data-act="btn" data-which="sleep">
-
-        <button class="btn" data-act="diag">读取诊断</button>😴 硬盘休眠</button>
+        <button class="btn" data-act="btn" data-which="sleep">😴 硬盘休眠</button>
+        <button class="btn" data-act="diag">读取诊断</button>
         <button class="btn" data-act="btn" data-which="eject">⏏️ 弹出 USB</button>
         <button class="btn danger" data-act="btn" data-which="reboot">🔄 重启设备</button>
       </div>
@@ -1765,9 +2049,9 @@ function openViewer(list, index) {
     title.textContent = list.length > 1 ? `${i + 1} / ${list.length}` : "";
     meta.textContent = [fmtDate(p.mtime), p.size ? fmtSize(p.size) : ""].filter(Boolean).join(" · ");
     // 用 photo_info 补齐元数据（含 hdcFilePath 原图路径）—— 失败就保持基础信息
-    if (p.fileId && !p._metaDone) {
+    if ((p.fileId || p.id) && !p._metaDone) {
       p._metaDone = true;
-      svc("photo_info", { file_ids: [p.fileId] }).then((info) => {
+      svc("photo_info", { file_ids: [p.fileId || p.id] }).then((info) => {
         const one = (info && (info.photos || info.items || [])[0]) || info || {};
         const extra = [one.hdcFilePath ? "原图" : "", one.width && one.height ? one.width + "x" + one.height : "",
                        one.mime || ""].filter(Boolean).join(" · ");
@@ -1931,6 +2215,8 @@ function mBusy(m, msg) {
 function toast(msg) {
   const panel = window.__hs_panel;
   const host = (panel && panel.shadowRoot) || document.body;
+  // 同一时间只保留一条：连续操作时旧提示不会在底部堆成一列
+  host.querySelectorAll(".toast").forEach(function (old) { old.remove(); });
   const t = document.createElement("div");
   t.className = "toast";
   t.textContent = msg;
@@ -1998,7 +2284,7 @@ class HuaweiStoragePanel extends HTMLElement {
     if (this._keys) return;
     this._keys = true;
     const sr = this.shadowRoot;
-    document.addEventListener("keydown", (e) => {
+    this._onKey = (e) => {
       if (e.key === "Escape") {
         const v = sr.querySelector(".viewer");
         if (v) { const c = v.querySelector("[data-close]"); if (c) c.click(); return; }
@@ -2012,11 +2298,17 @@ class HuaweiStoragePanel extends HTMLElement {
         this._draw();
         setTimeout(() => { const i = sr.getElementById("kwInput"); if (i) i.focus(); }, 80);
       }
-    });
-  }
+    };
+    document.addEventListener("keydown", this._onKey);  }
 
   disconnectedCallback() {
     if (this._timer) clearInterval(this._timer);
+    cleanupImages();
+    // ⚠️ 全局 keydown 若不解绑：闭包持有 shadowRoot，面板反复进出会累积监听。
+    if (this._onKey) {
+      try { document.removeEventListener("keydown", this._onKey); } catch (e) { /* 已移除 */ }
+      this._onKey = null;
+    }   // observer 与图片队列随组件一起释放
   }
 
   _nav() { return this.shadowRoot.getElementById("nav"); }
@@ -2109,21 +2401,54 @@ class HuaweiStoragePanel extends HTMLElement {
     for (const [k, v] of Object.entries(VIEWS)) {
       (groups[v.group] = groups[v.group] || []).push([k, v]);
     }
-    this._nav().innerHTML = Object.entries(groups).map(([group, items]) =>
+    // 桌面：按分组的侧栏（浏览 / 管理）
+    const deskHtml = Object.entries(groups).map(([group, items]) =>
       `<div class="sec">${esc(group)}</div>` + items.map(([k, v]) =>
         `<button data-view="${k}" class="${k === this._view ? "active" : ""}">
           <span class="ico">${v.icon}</span><span>${esc(v.title)}</span></button>`).join("")
     ).join("");
+
+    // 移动端：8 项放不下（≈509px > 414px 屏宽）→ 5 个主入口 + 「更多」抽屉
+    const PRIMARY = ["overview", "albums", "files", "search"];
+    const primHtml = PRIMARY.map((k) => {
+      const v = VIEWS[k];
+      if (!v) return "";
+      return `<button data-view="${k}" class="${k === this._view ? "active" : ""}">
+        <span class="ico">${v.icon}</span><span>${esc(v.title)}</span></button>`;
+    }).join("") + `<button data-act="more" class="${MORE_OPEN ? "active" : ""}">
+      <span class="ico">☰</span><span>更多</span></button>`;
+
+    // 「更多」抽屉内容：任务 / 设备 / 用户 / 配置
+    const moreHtml = MORE_OPEN ? `<div class="morebar">` +
+      ["tasks", "device", "users", "config"].map((k) => {
+        const v = VIEWS[k];
+        if (!v) return "";
+        return `<button class="btn sm ${k === this._view ? "pri" : ""}" data-view="${k}">
+          <span class="ico">${v.icon}</span> ${esc(v.title)}</button>`;
+      }).join("") + `</div>` : "";
+
+    this._nav().innerHTML = `<div class="nav-desk">${deskHtml}</div>`
+      + `<div class="nav-mob">${primHtml}${moreHtml}</div>`;
+
     this._nav().querySelectorAll("[data-view]").forEach((b) => {
       b.addEventListener("click", () => {
         this._view = b.dataset.view;
         if (this._view !== "albums") ALB.album = null;
         if (this._view !== "tasks") TASK.data = null;
+        MORE_OPEN = false;
         this._renderNav();
         this._draw();
       });
     });
+    const moreBtn = this._nav().querySelector('[data-act="more"]');
+    if (moreBtn) {
+      moreBtn.addEventListener("click", () => {
+        MORE_OPEN = !MORE_OPEN;
+        this._renderNav();
+      });
+    }
   }
+
 
   _renderAccts(d) {
     const box = this.shadowRoot.getElementById("accts");
@@ -2172,14 +2497,31 @@ class HuaweiStoragePanel extends HTMLElement {
       + v.render(d);
 
     this._wire();
+    // 搜索框：回车即搜索（placeholder 承诺了"回车"，之前没绑，是 bug）
+    const kwEl = this.shadowRoot.getElementById("kwInput");
+    if (kwEl && !kwEl.dataset.enterBound) {
+      kwEl.dataset.enterBound = "1";
+      kwEl.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); doSearch(); }
+      });
+    }
     queueImages(this._main());
-    if (this._view === "files") loadFiles();
+    // 拖拽上传必须在这里初始化。此前只在账号胶囊的点击回调里调（且单账号用户
+    // 根本不会绑定该回调）→ 首次进文件页拖拽无反应（静默失败）。initDnd 幂等，重复调用安全。
+    if (this._view === "files") { loadFiles(); initDnd(this); }
     if (this._view === "tasks") loadTasks();
     if (this._view === "search") {}
   }
 
   _wire(root) {
-    (root || this._main()).querySelectorAll("[data-act]").forEach((el) => {
+    // ⚠️ 此前只扫 .main → 顶栏里的皮肤切换器（data-act="skin"）永远拿不到 handler，
+    // 5 个皮肤按钮全部点不动。改为：无 root 时同时扫描顶栏与主体。
+    const scope = root || [this.shadowRoot.querySelector(".topbar"), this._main()];
+    const nodes = [];
+    (Array.isArray(scope) ? scope : [scope]).forEach((r) => {
+      if (r) r.querySelectorAll("[data-act]").forEach((el) => nodes.push(el));
+    });
+    nodes.forEach((el) => {
       if (el.dataset.bound) return;
       el.dataset.bound = "1";
       const act = el.dataset.act;
@@ -2217,6 +2559,10 @@ class HuaweiStoragePanel extends HTMLElement {
         } else if (act === "task-clean-all") {
           const ids = ((TASK.data && TASK.data.tasks) || []).map((t) => t.taskId);
           cleanTasks(ids, "本来源全部 " + ids.length + " 条记录");
+        } else if (act === "search-clear") {
+          SRC.kw = ""; SRC.res = null; SRC.err = "";
+          this._draw();
+          setTimeout(() => { const i = this.shadowRoot.getElementById("kwInput"); if (i) i.focus(); }, 60);
         } else if (act === "search-go") {
           doSearch();
         } else if (act === "pick-on") {
@@ -2227,15 +2573,26 @@ class HuaweiStoragePanel extends HTMLElement {
           this._draw();
         } else if (act === "pick") {
           e.stopPropagation();
-          togglePick(el.dataset.path);
+          // Shift 点击：从上一次勾选到当前，批量区间选择
+          if (e.shiftKey && PICK.last != null) {
+            const all = pickAllPaths();
+            const a = all.indexOf(PICK.last), b = all.indexOf(el.dataset.path);
+            if (a >= 0 && b >= 0) {
+              const [lo, hi] = a < b ? [a, b] : [b, a];
+              for (let i = lo; i <= hi; i++) PICK.set.add(all[i]);
+            } else { togglePick(el.dataset.path); }
+          } else {
+            togglePick(el.dataset.path);
+          }
+          PICK.last = el.dataset.path;
           this._draw();
         } else if (act === "pick-all") {
           const all = [...(PH.data && PH.data.files || [])].map((f) =>
             PH.path + f.name + (f.type === 8 ? "" : "/"));
-          PICK.set = new Set(all);
+          PICK.set = new Set(all); PICK.last = null;
           this._draw();
         } else if (act === "pick-none") {
-          PICK.set.clear();
+          PICK.set.clear(); PICK.last = null;
           this._draw();
         } else if (act === "pick-move") { pickRun("move");
         } else if (act === "pick-copy") { pickRun("copy");
@@ -2264,6 +2621,37 @@ class HuaweiStoragePanel extends HTMLElement {
           dupResult();
         } else if (act === "diag") {
           diagLoad();
+        } else if (act === "dest-go") {
+          loadDestDirs(el.dataset.path);
+        } else if (act === "dest-cancel") {
+          DEST.open = false; DEST.cb = null;
+          this._draw();
+        } else if (act === "dest-ok") {
+          const cb = DEST.cb, d = DEST.cur;
+          DEST.open = false; DEST.cb = null;
+          this._draw();
+          if (cb) cb(d);
+        } else if (act === "album-add-picked") {
+          openAlbumOp("add");
+        } else if (act === "album-share-picked") {
+          openAlbumOp("share");
+        } else if (act === "albop-cancel") {
+          ALBOP.open = false; this._draw();
+        } else if (act === "albop-ok") {
+          runAlbumOp(el.dataset.id, el.dataset.name);
+        } else if (act === "pick-all-photos") {
+          PICK.set = new Set((ALB.photos || []).map((_, i) => "photo:" + i));
+          PICK.last = null; this._draw();
+        } else if (act === "row-dl") {
+          e.stopPropagation();
+          downloadFile(el.dataset.path, el.dataset.name);
+        } else if (act === "nav") {
+          const to = el.dataset.view;
+          if (to && VIEWS[to]) {
+            this._view = to;
+            this._renderNav();
+            this._draw();
+          }
         } else if (act === "photo-open") {
           openViewer(ALB.photos, Number(el.dataset.idx));
         } else if (act === "file-open") {
@@ -2278,6 +2666,14 @@ class HuaweiStoragePanel extends HTMLElement {
         } else if (act === "fs-go") {
           // 点在行内的 ⋯ 上时不要跟着进目录
           if (e.target.closest('[data-act="row-menu"]')) return;
+          // 多选模式下点行即勾选（不必精准点小复选框）
+          if (PICK.on) {
+            e.stopPropagation();
+            togglePick(el.dataset.path);
+            PICK.last = el.dataset.path;
+            this._draw();
+            return;
+          }
           PH.path = el.dataset.path;
           if (PICK.on) { PICK.set.clear(); }
           loadFiles();

@@ -608,6 +608,13 @@ class HuaweiDeviceClient:
         # 成功：{"code":0,"data":{"path":...}}。注意 code 可能是 str/int。
         if str(j.get("code")) != "0":
             raise HuaweiDeviceError(f"/upload 失败: {text[:200]}")
+        # ⚠️ prepareUpload 返回的 fileId **就是相册域的 fileId** ——
+        # 此前拿到只用于会话、没有回传，导致"上传后想加入相册"无从下手。
+        if isinstance(j, dict):
+            j.setdefault("data", {})
+            if isinstance(j.get("data"), dict):
+                j["data"].setdefault("fileId", fid)
+            j.setdefault("fileId", fid)
         return j
 
     async def async_get_album_photos(

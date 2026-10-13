@@ -463,7 +463,10 @@ _ALBUM_GROUPS: tuple[tuple[str, str, tuple[int, ...]], ...] = (
     ("face", "人物", (23,)),
     ("place", "地点", (22,)),
     ("scene", "场景", (24,)),
-    ("user", "我的相册", (6,)),
+    # albumType=6 在设备/App 里归在「共享 → 共享相册」（家庭多成员共建，实测
+    # ownerName 有 10001/10002 两个归属人），不是「我的相册」。此前标错名字，
+    # 用户按「共享相册」找不到。
+    ("user", "共享相册", (6,)),
 )
 
 
@@ -566,18 +569,27 @@ class HuaweiStorageAlbumsView(HomeAssistantView):
                             ),
                         }
                     )
-            # 「我的相册」若缓存里没有，直接补取 albumType=6（失败只降级）
-            if group_key == "user" and not albums:
+            # 共享相册(type=6)：主列表不含这一类，须单独取。此前只在「缓存为空」
+            # 时补 → 缓存若已有部分 type=6 就不再补，会漏。改为总是并入并去重。
+            if group_key == "user":
+                _seen = {
+                    (int(x.get("type") or 0), int(x.get("id") or 0)) for x in albums
+                }
                 try:
                     res = await _client_of(runtime, account)._request(
                         "/gallery/getAlbumList", {"albumType": 6}
                     )
                     for a in res.get("albumlist") or []:
                         thumb = _album_thumb(a)
+                        _al_type = int(a.get("albumType") or 6)
+                        _al_id = int(a.get("albumId") or 0)
+                        if (_al_type, _al_id) in _seen:
+                            continue
+                        _seen.add((_al_type, _al_id))
                         albums.append(
                             {
-                                "type": int(a.get("albumType") or 6),
-                                "id": int(a.get("albumId") or 0),
+                                "type": _al_type,
+                                "id": _al_id,
                                 "name": a.get("albumName") or "未命名相册",
                                 "count": int(a.get("num") or 0),
                                 "thumbUrl": (
@@ -676,6 +688,10 @@ class HuaweiStorageAlbumPhotosView(HomeAssistantView):
             lcd = p.get("lcdFilePath") or ""
             item = {
                 "id": p.get("fileId"),
+                # ⚠️ 前端 pickedPhotoIds 读的是 fileId（相册域）用于「加入相册 /
+                # 共享给家人」。此前只序列化成 "id" → 前端取不到 → 该功能 100%
+                # 失败（选了照片也提示"请先选择照片"）。两个字段都给，兼容两端。
+                "fileId": p.get("fileId"),
                 "name": name,
                 "size": p.get("fileSize") or p.get("size"),
                 "mtime": p.get("mtime") or p.get("createTime"),
@@ -744,15 +760,21 @@ class HuaweiStorageRecycleView(HomeAssistantView):
         return web.json_response({"count": len(out), "items": out})
 
 
+
+
+
 class HuaweiStorageUploadView(HomeAssistantView):
     """浏览器上传（面板用）。
 
-    ``POST /api/huawei_home_storage/upload/<entry_id>?path=/file/x.bin&space=user``
-    body = 文件原始字节，``Content-Length`` 必需（设备侧 prepareUpload 要声明大小）。
+    POST /api/huawei_home_storage/upload/<entry_id>?path=...&space=user
+    body = 文件原始字节，Content-Length 必需（设备侧 prepareUpload 要声明大小）。
 
-    为什么单开一个视图：集成的 ``upload_file`` **服务**只支持文本
-    （``content``）或 HA 主机上的路径（``local_path``），都承载不了
-    「用户在浏览器里选的文件」。本视图边收边转发，内存占用只有一个分块。
+    为什么单开一个视图：集成的 upload_file 服务只接受文本（content）或
+    HA 主机上的路径（local_path），都承载不了「用户在浏览器里选的文件」。
+    本视图边收边转发给设备，内存只占一个分块。
+
+    ⚠️ 上传落在**文件空间**（/file/），不会自动出现在相册里 —— 两者是
+    设备上的独立存储（实测：把真 JPEG 传到 /file/ 后，相册里查不到该图）。
     """
 
     url = "/api/huawei_home_storage/upload/{entry_id}"
@@ -773,7 +795,6 @@ class HuaweiStorageUploadView(HomeAssistantView):
         category = "public" if space == "public" else "user"
         client = _client_of(runtime, request.query.get("account") or "")
 
-        # 目标目录必须已存在，否则设备会直接断开连接（实测）
         parent = dest.rstrip("/").rsplit("/", 1)[0] + "/"
         if not await ensure_dir(client, parent, category):
             return web.json_response(
