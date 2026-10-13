@@ -44,6 +44,37 @@ reboot_device:
       required: false
       selector: {text: {}}
 
+# --- 新增：关机（不可逆）---
+shutdown_device:
+  name: 关机
+  description: ⚠️ 彻底关机设备（不可逆，需物理按键重启。逆向推断未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+# --- 新增：磁盘诊断 ---
+disk_info:
+  name: 磁盘诊断
+  description: 查询磁盘基础状态 + SMART 健康（两个端点合在一个响应里。非 RAID 设备的 RAID 字段会返回 error）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+# --- 新增：RAID 状态 ---
+raid_status:
+  name: RAID 状态
+  description: RAID 阵列状态。非 RAID 设备会返回 error（RAID 不是标配）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+
 disk_sleep:
   name: 磁盘休眠
   description: 让设备磁盘进入休眠（可恢复，唤醒由设备策略决定）
@@ -214,6 +245,43 @@ list_albums:
       required: false
       default: 0
       selector: {number: {min: 0}}
+
+add_album:
+  name: 创建相册
+  description: 新建相册（逆向推断实现，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    name:
+      name: 相册名
+      required: true
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+
+del_album:
+  name: 删除相册
+  description: ⚠️ 删除相册（不可逆！逆向推断实现，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+
 
 album_photos:
   name: 相册照片

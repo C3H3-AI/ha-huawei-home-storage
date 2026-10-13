@@ -701,6 +701,36 @@
       "name": "Reboot storage device",
       "description": "⚠️ Interrupts storage service for 1-2 minutes (recoverable); the integration never reboots automatically."
     },
+    "shutdown_device": {
+      "name": "Shutdown device",
+      "description": "Powers off the device completely (irreversible, needs physical reboot. Inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "disk_info": {
+      "name": "Disk diagnostics",
+      "description": "Query disk basic status + SMART health (combined in one response)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "raid_status": {
+      "name": "RAID status",
+      "description": "RAID array status. Non-RAID devices return an error",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
     "disk_sleep": {
       "name": "Disk sleep",
       "description": "Put device disks to sleep (recoverable; wake-up follows device policy)."
@@ -838,6 +868,42 @@
         "album_type": {
           "name": "Album type",
           "description": "0 = smart albums; 6 = user/shared albums."
+        }
+      }
+    },
+    "add_album": {
+      "name": "Create album",
+      "description": "Create a new album (inferred implementation, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "name": {
+          "name": "Album name",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "0=system, 6=shared"
+        }
+      }
+    },
+    "del_album": {
+      "name": "Delete album",
+      "description": "⚠️ Delete an album (irreversible! Inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "0=system, 6=shared"
         }
       }
     },
