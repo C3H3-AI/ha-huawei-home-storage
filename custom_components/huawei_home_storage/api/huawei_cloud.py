@@ -315,8 +315,15 @@ def start_service_blocking(
     info = (svc or {}).get("data") or {}
     chain, encrypted = info.get("chain"), info.get("encrypted")
     if not chain or not encrypted:
+        # ⚠️ 设备失败时会返回 ``data: {"code": 8005, "matchId": ...}`` 而**没有**
+        # chain/encrypted。此前只报「缺少 chain/encrypted」，把设备给的**真实
+        # 错误码吞掉了**，排障只能靠临时加日志。这里把 code / 可用字段带出来。
+        dev_code = info.get("code")
+        extra = f"，设备 code={dev_code}" if dev_code is not None else ""
+        fields = ",".join(sorted(info.keys()))[:60] if isinstance(info, dict) else ""
         raise HuaweiCloudError(
-            f"设备返回缺少 chain/encrypted｜诊断: {diag}"
+            f"设备返回缺少 chain/encrypted{extra}"
+            f"（data 字段: {fields or '空'}）｜诊断: {diag}"
         )
     try:
         return decrypt_credentials(private_key, chain, encrypted)
