@@ -907,6 +907,138 @@
         }
       }
     },
+    "search_album_photos": {
+      "name": "Search album photos",
+      "description": "Search photos in an album by keyword (inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "keyword": {
+          "name": "Keyword",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "0=系统, 6=共享"
+        },
+        "num": {
+          "name": "Count per page",
+          "description": ""
+        },
+        "page": {
+          "name": "Page number",
+          "description": ""
+        }
+      }
+    },
+    "rename_media": {
+      "name": "Rename media",
+      "description": "Rename a photo or video file (inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "file_id": {
+          "name": "File ID",
+          "description": "Single file"
+        },
+        "file_ids": {
+          "name": "File IDs",
+          "description": "Multiple files"
+        },
+        "new_name": {
+          "name": "New name",
+          "description": "Required"
+        }
+      }
+    },
+    "remove_album_members": {
+      "name": "Remove album members",
+      "description": "Remove photos/videos from an album (files not deleted. Inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": ""
+        },
+        "file_id": {
+          "name": "File ID",
+          "description": "Single file"
+        },
+        "file_ids": {
+          "name": "File IDs",
+          "description": "Multiple files"
+        }
+      }
+    },
+    "hide_albums": {
+      "name": "Hide/show albums",
+      "description": "Hide albums (visible in App's hidden albums section) or show them (inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "album_ids": {
+          "name": "Album IDs",
+          "description": ""
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": ""
+        },
+        "hidden": {
+          "name": "Hidden",
+          "description": "true=隐藏, false=显示"
+        }
+      }
+    },
+    "list_all_albums": {
+      "name": "List all albums",
+      "description": "Includes hidden albums, system albums, recommended albums (more complete than list_albums. Inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "merge_face_albums": {
+      "name": "Merge face albums",
+      "description": "Merge multiple face albums into target (only for users with face albums. Inferred, not tested)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "target_album_id": {
+          "name": "Target album ID",
+          "description": "Required"
+        },
+        "source_album_id": {
+          "name": "Source album ID",
+          "description": ""
+        },
+        "source_album_ids": {
+          "name": "Source album IDs",
+          "description": ""
+        }
+      }
+    },
     "album_photos": {
       "name": "Album photos",
       "description": "List photos in an album (with paths and thumbnails), cursor paging supported.",

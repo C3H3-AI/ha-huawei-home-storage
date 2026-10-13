@@ -85,6 +85,13 @@ SERVICE_RAID_STATUS = "raid_status"
 # ---- 相册 CRUD ----
 SERVICE_ADD_ALBUM = "add_album"
 SERVICE_DEL_ALBUM = "del_album"
+SERVICE_SEARCH_ALBUM_PHOTOS = "search_album_photos"
+SERVICE_RENAME_MEDIA = "rename_media"
+SERVICE_REMOVE_ALBUM_MEMBERS = "remove_album_members"
+SERVICE_HIDE_ALBUMS = "hide_albums"
+SERVICE_LIST_ALL_ALBUMS = "list_all_albums"
+SERVICE_SHARE_TO_PERSON = "share_to_person"
+SERVICE_MERGE_FACE_ALBUMS = "merge_face_albums"
 
 REFRESH_SCHEMA = vol.Schema({vol.Optional("entry_id"): str})
 
@@ -539,6 +546,164 @@ async def async_register_services(hass: HomeAssistant) -> None:
         ok, dev_err = _device_ok(result)
         return {"ok": ok, "album_id": album_id,
                 "error": dev_err, "result": result}
+
+    async def _search_album_photos(call: "ServiceCall") -> "ServiceResponse":
+        """**相册内照片搜索**（关键词，逆向推断，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        keyword = str(call.data.get("keyword", "")).strip()
+        if not keyword:
+            return {"ok": False, "error": "keyword 必填"}
+        album_type = int(call.data.get("album_type", 0))
+        num = int(call.data.get("num", 100))
+        page = int(call.data.get("page", 1))
+        try:
+            result = await runtime.client.async_album_search(
+                keyword=keyword, album_type=album_type, num=num, page=page,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("相册搜索失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "keyword": keyword,
+                "result": result}
+
+    async def _rename_media(call: "ServiceCall") -> "ServiceResponse":
+        """**重命名照片/视频**（modifyFileAttr，逆向推断，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        file_ids = call.data.get("file_ids") or call.data.get("file_id")
+        if not file_ids:
+            return {"ok": False, "error": "file_id(s) 必填"}
+        if isinstance(file_ids, (int, str)):
+            file_ids = [file_ids]
+        new_name = call.data.get("new_name")
+        if not new_name:
+            return {"ok": False, "error": "new_name 必填"}
+        try:
+            result = await runtime.client.async_modify_file_attr(
+                file_ids=[int(i) for i in file_ids], new_name=new_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("重命名失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "new_name": new_name, "result": result}
+
+    async def _remove_album_members(call: "ServiceCall") -> "ServiceResponse":
+        """**从相册移除照片/视频**（对称于 add_album_members，逆向推断，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        album_id = int(call.data.get("album_id", 0))
+        if not album_id:
+            return {"ok": False, "error": "album_id 必填"}
+        album_type = int(call.data.get("album_type", 0))
+        file_ids = call.data.get("file_ids") or call.data.get("file_id")
+        if not file_ids:
+            return {"ok": False, "error": "file_id(s) 必填"}
+        if isinstance(file_ids, (int, str)):
+            file_ids = [file_ids]
+        try:
+            result = await runtime.client.async_del_album_memb(
+                album_id=album_id, album_type=album_type,
+                file_ids=[int(i) for i in file_ids],
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("移除相册成员失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        await runtime.fast.async_request_refresh()
+        ok, dev_err = _device_ok(result)
+        return {"ok": ok, "removed_count": len(file_ids),
+                "error": dev_err, "result": result}
+
+    async def _hide_albums(call: "ServiceCall") -> "ServiceResponse":
+        """**隐藏/显示相册**（modifyAlbumsHiddenStatus，逆向推断，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        album_ids = call.data.get("album_ids") or call.data.get("album_id")
+        if not album_ids:
+            return {"ok": False, "error": "album_id(s) 必填"}
+        if isinstance(album_ids, (int, str)):
+            album_ids = [album_ids]
+        album_type = int(call.data.get("album_type", 0))
+        hidden = bool(call.data.get("hidden", True))
+        try:
+            result = await runtime.client.async_hide_albums(
+                album_ids=[int(i) for i in album_ids],
+                album_type=album_type, hidden=hidden,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("隐藏相册失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "hidden": hidden,
+                "album_ids": [int(i) for i in album_ids],
+                "result": result}
+
+    async def _list_all_albums(call: "ServiceCall") -> "ServiceResponse":
+        """**列出全部相册**（含隐藏/系统/推荐，比 list_albums 全。逆向推断，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        try:
+            albums = await runtime.client.async_get_all_album_list()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("列出全部相册失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "album_count": len(albums), "albums": albums}
+
+    async def _share_to_person(call: "ServiceCall") -> "ServiceResponse":
+        """**同步分享给个人**（shareToPerson，异步版已有 add_share_to_person。逆向推断，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        file_ids = call.data.get("file_ids") or call.data.get("file_id")
+        if not file_ids:
+            return {"ok": False, "error": "file_id(s) 必填"}
+        if isinstance(file_ids, (int, str)):
+            file_ids = [file_ids]
+        receiver_ids = call.data.get("receiver_user_ids") or call.data.get("receiver_user_id")
+        if not receiver_ids:
+            return {"ok": False, "error": "receiver_user_id(s) 必填"}
+        if isinstance(receiver_ids, str):
+            receiver_ids = [receiver_ids]
+        auto_expire_days = int(call.data.get("auto_expire_days", 0))
+        try:
+            result = await runtime.client.async_share_to_person(
+                file_ids=[int(i) for i in file_ids],
+                receiver_user_ids=receiver_ids,
+                auto_expire_days=auto_expire_days,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("分享失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "receiver_count": len(receiver_ids),
+                "file_count": len(file_ids), "result": result}
+
+    async def _merge_face_albums(call: "ServiceCall") -> "ServiceResponse":
+        """**合并人脸相册**（mergeFaceAlbums，有人脸相册的用户才需要。逆向推断，未实机验证）。"""
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        target_id = int(call.data.get("target_album_id", 0))
+        if not target_id:
+            return {"ok": False, "error": "target_album_id 必填"}
+        source_ids = call.data.get("source_album_ids") or call.data.get("source_album_id")
+        if not source_ids:
+            return {"ok": False, "error": "source_album_id(s) 必填"}
+        if isinstance(source_ids, (int, str)):
+            source_ids = [source_ids]
+        try:
+            result = await runtime.client.async_merge_face_albums(
+                target_id=target_id,
+                source_ids=[int(i) for i in source_ids],
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("合并人脸相册失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "target_album_id": target_id,
+                "merged_count": len(source_ids), "result": result}
 
     async def _album_photos(call: "ServiceCall") -> "ServiceResponse":
         """列相册内的照片（``getAlbumInfo``，含路径与缩略图）。支持游标分页。"""
@@ -1468,6 +1633,76 @@ async def async_register_services(hass: HomeAssistant) -> None:
             **entry_field,
             vol.Required("album_id"): vol.Coerce(int),
             vol.Optional("album_type", default=0): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SEARCH_ALBUM_PHOTOS, _search_album_photos,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("keyword"): str,
+            vol.Optional("album_type", default=0): vol.Coerce(int),
+            vol.Optional("num", default=100): vol.Coerce(int),
+            vol.Optional("page", default=1): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_RENAME_MEDIA, _rename_media,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Exclusive("file_id", "target"): vol.Any(int, str),
+            vol.Exclusive("file_ids", "target"): [vol.Any(int, str)],
+            vol.Required("new_name"): str,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_REMOVE_ALBUM_MEMBERS, _remove_album_members,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("album_id"): vol.Coerce(int),
+            vol.Optional("album_type", default=0): vol.Coerce(int),
+            vol.Exclusive("file_id", "target"): vol.Any(int, str),
+            vol.Exclusive("file_ids", "target"): [vol.Any(int, str)],
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_HIDE_ALBUMS, _hide_albums,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Exclusive("album_id", "target"): vol.Any(int, str),
+            vol.Exclusive("album_ids", "target"): [vol.Any(int, str)],
+            vol.Optional("album_type", default=0): vol.Coerce(int),
+            vol.Optional("hidden", default=True): bool,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_LIST_ALL_ALBUMS, _list_all_albums,
+        schema=vol.Schema({**entry_field}),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SHARE_TO_PERSON, _share_to_person,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Exclusive("file_id", "target"): vol.Any(int, str),
+            vol.Exclusive("file_ids", "target"): [vol.Any(int, str)],
+            vol.Exclusive("receiver_user_id", "rx"): str,
+            vol.Exclusive("receiver_user_ids", "rx"): [str],
+            vol.Optional("auto_expire_days", default=0): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_MERGE_FACE_ALBUMS, _merge_face_albums,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Required("target_album_id"): vol.Coerce(int),
+            vol.Exclusive("source_album_id", "src"): vol.Any(int, str),
+            vol.Exclusive("source_album_ids", "src"): [vol.Any(int, str)],
         }),
         supports_response=SupportsResponse.ONLY,
     )

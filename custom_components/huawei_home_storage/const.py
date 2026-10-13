@@ -168,8 +168,18 @@ API_TRANS_STATUS = "/trans/status"
 API_ALBUM_ADD = "/gallery/addAlbum"
 API_ALBUM_DEL = "/gallery/delAlbum"
 API_ALBUM_DEL_MEMB = "/gallery/delAlbumMemb"
+API_ALBUM_MEM_INFO = "/gallery/getAlbumMembsInfo"
+API_ALL_ALBUM_LIST = "/gallery/getAllAlbumList"
+API_HIDE_ALBUMS = "/gallery/modifyAlbumsHiddenStatus"
+API_MERGE_FACE_ALBUM = "/gallery/mergeFaceAlbums"
+API_ALBUM_ADD_MEMB_ASYNC = "/gallery/addAlbumMembAsync"
+API_ALBUM_ADD_MEMB_TASK_QUERY = "/gallery/taskStatus"
 API_ALBUM_SEARCH = "/gallery/search"                  # 相册内照片搜索
-API_GALLERY_MODIFY_ATTR = "/gallery/modifyFileAttr"   # 重命名照片等
+API_GALLERY_MODIFY_ATTR = "/gallery/modifyFileAttr"   # 重命名照片等属性修改
+
+# 相册分享
+API_SHARE_TO_PERSON = "/gallery/shareToPerson"
+API_SHARE_TO_PERSON_STATUS = "/gallery/shareToPersonStatus"
 
 PHOTO_PAGE_SIZE = 500               # getIncPhotosInfoTable 固定每页 500
 

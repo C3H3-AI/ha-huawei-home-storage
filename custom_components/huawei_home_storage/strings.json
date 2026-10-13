@@ -907,6 +907,138 @@
         }
       }
     },
+    "search_album_photos": {
+      "name": "相册照片搜索",
+      "description": "按关键词搜索相册内的照片（逆向推断，未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "keyword": {
+          "name": "关键词",
+          "description": "必填"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": "0=系统, 6=共享"
+        },
+        "num": {
+          "name": "每页数量",
+          "description": ""
+        },
+        "page": {
+          "name": "页码",
+          "description": ""
+        }
+      }
+    },
+    "rename_media": {
+      "name": "重命名照片/视频",
+      "description": "修改照片或视频的文件名（逆向推断，未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "file_id": {
+          "name": "单个文件 ID",
+          "description": ""
+        },
+        "file_ids": {
+          "name": "多个文件 ID",
+          "description": ""
+        },
+        "new_name": {
+          "name": "新文件名",
+          "description": "必填"
+        }
+      }
+    },
+    "remove_album_members": {
+      "name": "从相册移除照片",
+      "description": "把照片/视频从相册里移出（文件本身不删）（逆向推断，未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "相册 ID",
+          "description": "必填"
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": ""
+        },
+        "file_id": {
+          "name": "单个文件 ID",
+          "description": ""
+        },
+        "file_ids": {
+          "name": "多个文件 ID",
+          "description": ""
+        }
+      }
+    },
+    "hide_albums": {
+      "name": "隐藏/显示相册",
+      "description": "隐藏相册（在 App 的「隐藏相册」里可见）或恢复显示（逆向推断，未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "单个相册 ID",
+          "description": ""
+        },
+        "album_ids": {
+          "name": "多个相册 ID",
+          "description": ""
+        },
+        "album_type": {
+          "name": "相册类型",
+          "description": ""
+        },
+        "hidden": {
+          "name": "隐藏",
+          "description": "true=隐藏, false=显示"
+        }
+      }
+    },
+    "list_all_albums": {
+      "name": "列出全部相册",
+      "description": "含隐藏相册、系统相册、推荐相册（比 list_albums 全。逆向推断，未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        }
+      }
+    },
+    "merge_face_albums": {
+      "name": "合并人脸相册",
+      "description": "把多个人脸相册合并到目标相册（有人脸相册的用户才需要。逆向推断，未实机验证）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "target_album_id": {
+          "name": "目标相册 ID",
+          "description": "必填"
+        },
+        "source_album_id": {
+          "name": "单个源相册 ID",
+          "description": ""
+        },
+        "source_album_ids": {
+          "name": "多个源相册 ID",
+          "description": ""
+        }
+      }
+    },
     "album_photos": {
       "name": "相册照片",
       "description": "列出相册内的照片（含路径与缩略图），支持游标分页。",
