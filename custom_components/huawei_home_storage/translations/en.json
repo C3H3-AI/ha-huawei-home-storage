@@ -1039,6 +1039,40 @@
         }
       }
     },
+    "recent_files": {
+      "name": "Recent files",
+      "description": "Recently accessed/modified files on the device",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "limit": {
+          "name": "Limit",
+          "description": ""
+        }
+      }
+    },
+    "installed_plugins": {
+      "name": "Installed plugins",
+      "description": "List of plugins installed on the device (acelite API)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "all_trans_tasks": {
+      "name": "All transfer tasks",
+      "description": "All transfer tasks on the device (move/copy/upload, trans domain)",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
     "album_photos": {
       "name": "Album photos",
       "description": "List photos in an album (with paths and thumbnails), cursor paging supported.",

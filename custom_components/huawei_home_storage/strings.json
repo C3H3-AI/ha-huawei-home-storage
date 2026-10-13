@@ -1039,6 +1039,40 @@
         }
       }
     },
+    "recent_files": {
+      "name": "最近文件",
+      "description": "设备侧最近访问/修改的文件列表",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        },
+        "limit": {
+          "name": "数量上限",
+          "description": ""
+        }
+      }
+    },
+    "installed_plugins": {
+      "name": "已装插件",
+      "description": "家庭存储设备上已安装的插件列表（acelite 接口）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        }
+      }
+    },
+    "all_trans_tasks": {
+      "name": "全量传输任务",
+      "description": "设备上所有传输任务（move/copy/upload 等，trans 域）",
+      "fields": {
+        "entry_id": {
+          "name": "配置条目 ID",
+          "description": ""
+        }
+      }
+    },
     "album_photos": {
       "name": "相册照片",
       "description": "列出相册内的照片（含路径与缩略图），支持游标分页。",
