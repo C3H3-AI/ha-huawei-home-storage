@@ -1765,34 +1765,6 @@ class HuaweiDeviceClient:
         )
         return (data.get("data") or {}).get("tasks") or []
 
-    async def async_get_task_by_id(
-        self,
-        task_id: int,
-        service: str = "filesvc",
-    ) -> dict[str, Any]:
-        """按 **单个 taskId** 查任务进度（``/filesvc/getTaskStatus`` /
-        ``/trans/getTaskStatus``，取决于 service）。
-
-        ⚠️ **逆向推断**：query 带 taskId + clientType + deviceId，
-        GET 形态；未实机验证。
-        与 :meth:`async_get_task_status` 互补 —— 后者查全量表，
-        本方法查单个 batchOperation 返回的 taskId。
-        """
-        if service == "trans":
-            api = API_TRANS_TASK_STATUS
-        else:
-            api = API_FILESVC_TASK_STATUS
-        creds = await self.async_ensure_credentials()
-        return await self._request(
-            api,
-            {
-                "taskId": int(task_id),
-                "clientType": DEVICE_CLIENT_TYPE,
-                "deviceId": creds.cloud_dev_id,
-            },
-            method="GET",
-        )
-
     async def async_clean_task_records(
         self, task_ids: list[int], category: str = "user"
     ) -> dict[str, Any]:
