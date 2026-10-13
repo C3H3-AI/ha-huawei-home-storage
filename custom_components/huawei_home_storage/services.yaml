@@ -601,7 +601,7 @@ copy_paths:
 
 delete_paths:
   name: 删除文件/目录
-  description: 删除文件空间的文件/目录 —— 一律移入回收站（可逆，用 recover_recycle 还原）
+  description: 删除文件空间的文件/目录 —— 默认移入回收站（可逆）；skip_recycle=true 永久删除（不可逆，逆向推导待实机验证）
   fields:
     entry_id:
       name: 配置条目 ID
@@ -620,6 +620,11 @@ delete_paths:
       selector:
         select:
           options: [user, public]
+    skip_recycle:
+      name: 跳过回收站（永久删除）
+      description: true=直接永久删除不进回收站（⚠️ 不可逆）
+      required: false
+      selector: {boolean: {}}
 
 upload_file:
   name: 上传文件
@@ -770,6 +775,59 @@ recover_recycle:
       required: false
       default: 4
       selector: {number: {min: 0, max: 8}}
+
+permanent_delete_recycle_items:
+  name: 永久删除回收站条目
+  description: 把回收站里的条目永久删掉（⚠️ 不可逆！逆向推导待实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    rids:
+      name: 回收站 rid 列表
+      description: 直接给 rid（数字或字符串），或用 paths/names 自动匹配
+      required: false
+      example: '[82, 123]'
+      selector:
+        text: {multiple: true}
+    rid:
+      name: 单个 rid
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 路径
+      description: 从回收站列表按路径匹配
+      required: false
+      selector:
+        text: {multiple: true}
+    names:
+      name: 名字列表
+      description: 从回收站列表按名字匹配
+      required: false
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+empty_recycle:
+  name: 清空回收站
+  description: 一键清空整个回收站（⚠️ 所有条目永久消失！逆向推导待实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
 
 # ---------------------------------------------------------------------------
 # 相册（照片/视频）

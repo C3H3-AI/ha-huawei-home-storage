@@ -98,6 +98,8 @@ API_PHOTOS_INC = "/gallery/getIncPhotosInfoTable"
 API_QUERY_BIN = "/gallery/queryBin"
 API_FILES = "/filesvc/files"
 API_RECYCLE = "/filesvc/recycleFiles"
+# 回收站操作（永久删除条目/清空/恢复，逆向 2026-10-13）
+API_RECYCLE_OPERATE = "/filesvc/recycleDelFiles"
 API_USB_STATUS = "/filesvc/usbStatus"
 # 上传第一步：申请文件占位，返回 fileId + sessionId（实测 2026-10-08 可用）
 API_PREPARE_UPLOAD = "/filesvc/prepareUpload"

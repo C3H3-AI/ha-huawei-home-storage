@@ -7,14 +7,43 @@
 
 ### 新增
 
+- **从智慧生活 App 插件逆向出永久删除参数**（2026-10-13，`517616675.jar`）：
+  之前一直以为"永久删除做不到"，实际是逆向漏了两个关键参数：
+  1. `/filesvc/batchOperation` 删文件进还是不进回收站 → body 加 `operationType: "force"` / `"recycle"`（之前只有 query 的 `type` 字段没用）
+  2. `/filesvc/recycleDelFiles` 永久删/清空回收站 → **漏了 `?category=` query 参数**（空串=我的文件、`public`=共享）+ body 的 `files` 是 **Long 数字数组**不是字符串数组
+
+- **`delete_paths` 新增 `skip_recycle` 参数** —— `true` 时直接永久删除不进回收站
+  （逆向推导，待实机验证）
+
+- **`permanent_delete_recycle_items` 服务** —— 永久删除回收站条目（
+  `recycleDelFiles?action=remove`），支持直接给 rid / rids，或给 paths / names
+  自动匹配（逆向推导，待实机验证）
+
+- **`empty_recycle` 服务** —— 一键清空整个回收站（`recycleDelFiles?action=clear`，
+  逆向推导，待实机验证。App UI 上 clear 只取回收站第一条 rid 就 break，
+  所以实现也只传一个）
+
+- **服务数 34 → 36** —— 新增 `permanent_delete_recycle_items`、
+  `empty_recycle` 两个服务
+
+### 修正
+
+- README 中原来写着"集成不提供永久删除，`recycleDelFiles` 参数没解出"——
+  现在参数解出来了（逆向 App 插件），文档更新为现状
+
+### 技术债
+
+- **`recover_recycle` 简化** —— 之前独立实现了一套 rid 解析（paths/names 自动匹配），
+  现在抽成 `_resolve_recycle_rids` 辅助函数，三个回收站服务共用，减少重复代码
+
+### 之前的 Unreleased（保留）
+
 - **`download_file` 服务** —— 与 `upload_file` 对称：把设备文件空间的文件
   **流式**下载到 HA 主机（内存 ≈ 一个分块，几百 MB 文件不吃内存）。
   - `local_path` 限定在 `/config/uploads` 下（与上传的读取限制对称，
     防止写穿容器覆盖 `secrets.yaml` / `.storage`），父目录自动创建。
   - `local_path` 给目录（尾斜杠或已存在目录）时自动取设备侧文件名。
   - 下载失败时清掉半截文件，不留误导性残留。
-
-### 修正
 
 - README 中 `search_files` 仍写着「参数未解出、返回失败」—— 该服务在
   `feat/file-search` 已实测可用，表格与描述更新为现状。

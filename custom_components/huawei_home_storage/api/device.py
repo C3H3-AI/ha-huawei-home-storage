@@ -33,6 +33,7 @@ from ..const import (
     API_PHOTOS_INC,
     API_QUERY_BIN,
     API_RECYCLE,
+    API_RECYCLE_OPERATE,
     API_USB_STATUS,
     API_PREPARE_UPLOAD,
     API_CANCEL_UPLOAD,
@@ -1006,19 +1007,21 @@ class HuaweiDeviceClient:
                        "subTaskId":1,"transId":"244833947285","type":0}]}
             -> {"code":0,"data":{"tasks":[{"taskId":6,"transId":"..."}]}}
 
-        要点（此前一直失败的根因）：
-        * 端点不是 ``/filesvc/remove``（该端点恒 1101），而是 **``batchOperation``**
+        要点：
+        * 端点是 **``batchOperation``**（不是 ``/filesvc/remove``，后者恒 1101）
         * ``operation=remove`` 决定了动作，``type=recycle`` 决定去向（**进回收站**）
-        * ⚠️ ``to_recycle=False``（query 用 ``type=delete``）**实测恒 1101，未解出**：
-          2026-10-08 试过 ``operation=delete`` / ``clean`` / 带 ``redundancy``
-          以及 ``/filesvc/recycleDelFiles`` 的多种 body 形态，全部 1101。
-          因此**永久删除目前做不到**，回收站条目只能在客户端 App 里清
+        * ``to_recycle=False`` → **永久删除不进回收站**（逆向推导，待实机验证）：
+          batchOperation body 加 ``operationType: "force"``；
+          ``to_recycle=True`` 时对应 ``"recycle"``
+
+        ⚠️ 本方法的 force/clear 路径是**从智慧生活 App 插件逆向推导**
+        （``517616675.jar`` 的 ``FileBatchPresenter``），**未实机测试过**；
+        如果实机返回 1101，请反馈抓包协助排查。
         * 参数嵌在 **``tasks[]`` 数组**里，不是扁平 body
         * ``srcPath`` 是**数组**，目录路径需带尾斜杠
         * ⚠️ body 里的 ``deviceId`` 必须是**配置条目的 device_id**
           （``entry.data["device_id"]``，形如 ``42e9d4b7-...``）；
-          用 ``creds.cloud_dev_id``（设备 SN）会被拒 ``1101``——
-          这两者在此端点上**不可互换**（实测 2026-10-08）
+          用 ``creds.cloud_dev_id``（设备 SN）会被拒 ``1101``
 
         返回 ``{"code":0,"data":{"tasks":[{"taskId":..,"transId":".."}]}}``。
         删除为**异步任务**：返回成功不代表立即生效，用
@@ -1036,13 +1039,15 @@ class HuaweiDeviceClient:
                 # 12 位才返回 code 0（抓包原值为 12 位）。
                 "transId": str(random.randint(10**11, 10**12 - 1)),
                 "type": 0,
-            }]
+            }],
+            # 逆向自 FileBatchPresenter：force=不进回收站直接删（2026-10-13）
+            "operationType": "recycle" if to_recycle else "force",
         }
         return await self._request(
             API_BATCH_OPERATION,
             method="POST",
             params={"category": category, "operation": "remove",
-                    "type": "recycle" if to_recycle else "delete"},
+                    "type": "recycle" if to_recycle else "force"},
             json_body=body,
         )
 
@@ -1201,6 +1206,64 @@ class HuaweiDeviceClient:
             {"category": category, "limit": limit, "offset": offset},
         )
         return (data.get("data") or {}).get("files") or []
+
+    async def async_recycle_operate(
+        self,
+        action: str,
+        rids: list[int | str] | None = None,
+        category: str = "public",
+    ) -> dict[str, Any]:
+        """回收站条目操作（``/filesvc/recycleDelFiles``）。
+
+        ⚠️ **逆向推导，待实机验证**：从智慧生活 App 插件
+        ``517616675.jar`` 的 ``RecycleOperateRequestBean`` /
+        ``FileApi.operateRecycleFiles`` / ``FileFragment.java`` 挖出，
+        之前直接调端点恒 1101，**当时没解出的关键就是：**
+
+        1. 请求要带 ``?category=`` query（之前调时漏了这个）
+        2. category 口径跟 batchOperation 不同：空串=我的文件，public=共享
+        3. body 的 ``files`` 是 **Long 数字数组**，不是字符串数组
+
+        抓包形态（从 jadx 反编译还原）::
+
+            POST /filesvc/recycleDelFiles?category=public
+            {"action": "remove", "files": [82, 123, ...]}
+            -> {"code":0}   # 或带 data.progressId（restore 时异步）
+
+        **三个 action：**
+
+        +-----------+------------------+-------------------------------+
+        | action    | 语义             | 备注                          |
+        +===========+==================+===============================+
+        | ``remove``| **永久删除**条目  | rids 必填；不可逆             |
+        | ``restore``| **恢复**条目     | rids 必填；返回 ``progressId``|
+        | ``clear`` | **清空整个回收站**| rids 传回收站任意 1 条 rid；  |
+        |           |                  | App UI 上只取第一条就 break    |
+        +-----------+------------------+-------------------------------+
+
+        ``rid`` 来自 :meth:`async_list_recycle`。
+        """
+        if action not in ("remove", "restore", "clear"):
+            raise ValueError(
+                f"action 必须是 remove / restore / clear，收到 {action!r}"
+            )
+        if action == "clear":
+            # 逆向 FileFragment.java L276-278：clear 只取 list 第一个 rid
+            if not rids:
+                raise ValueError("clear 需要至少 1 个 rid（随便哪个都行）")
+            files_body = [int(rids[0])]
+        else:
+            if not rids:
+                raise ValueError(f"{action} 需要 rids 列表")
+            files_body = [int(r) for r in rids]
+        # recycleDelFiles 的 category 口径：空串=我的文件，public=共享
+        cat_param = category if category == "public" else ""
+        return await self._request(
+            API_RECYCLE_OPERATE,
+            method="POST",
+            params={"category": cat_param},
+            json_body={"action": action, "files": files_body},
+        )
 
     async def async_cancel_upload(
         self, fids: list[int] | list[str], device_id: str
