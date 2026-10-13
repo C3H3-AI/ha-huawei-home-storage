@@ -71,8 +71,16 @@ from ..const import (
     API_ALBUM_ADD,
     API_ALBUM_DEL,
     API_ALBUM_DEL_MEMB,
+    API_ALBUM_MEM_INFO,
+    API_ALL_ALBUM_LIST,
+    API_HIDE_ALBUMS,
+    API_MERGE_FACE_ALBUM,
+    API_ALBUM_ADD_MEMB_ASYNC,
+    API_ALBUM_ADD_MEMB_TASK_QUERY,
     API_ALBUM_SEARCH,
     API_GALLERY_MODIFY_ATTR,
+    API_SHARE_TO_PERSON,
+    API_SHARE_TO_PERSON_STATUS,
     API_DEVICE_REBOOT,
     API_DEVICE_SHUTDOWN,
     API_DISK_SLEEP,
@@ -482,6 +490,154 @@ class HuaweiDeviceClient:
             body["fileAttr"] = {"newName": new_name}
         return await self._request(
             API_GALLERY_MODIFY_ATTR, method="POST", json_body=body
+        )
+
+    async def async_del_album_memb(
+        self,
+        album_id: int,
+        album_type: int,
+        file_ids: list[int | str],
+    ) -> dict[str, Any]:
+        """从相册移除成员（``/gallery/delAlbumMemb``，**POST**）。
+
+        对称于 :meth:`async_add_album_members`。⚠️ 逆向推断，未实机验证。
+        """
+        body: dict[str, Any] = {
+            "albumId": int(album_id),
+            "albumType": int(album_type),
+            "membs": [{"fileId": int(i)} for i in file_ids],
+        }
+        return await self._request(
+            API_ALBUM_DEL_MEMB, method="POST", json_body=body
+        )
+
+    async def async_get_album_membs_info(
+        self,
+        album_id: int,
+        album_type: int,
+        pre_id: int = 0,
+        num: int = 500,
+    ) -> dict[str, Any]:
+        """相册成员详情（``/gallery/getAlbumMembsInfo``，**GET**）。
+
+        非增量的全量拉取，比 ``albumMembIncInfo`` 完整。⚠️ 逆向推断，未实机验证。
+        """
+        return await self._request(
+            API_ALBUM_MEM_INFO,
+            {"albumId": int(album_id), "albumType": int(album_type),
+             "preId": int(pre_id), "num": int(num)},
+        )
+
+    async def async_get_all_album_list(self) -> list[dict[str, Any]]:
+        """全部相册列表（``/gallery/getAllAlbumList``，**GET**）。
+
+        含隐藏相册 / 系统相册 / 推荐相册，比 ``getAlbumList`` 全。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        data = await self._request(API_ALL_ALBUM_LIST)
+        d = data.get("data") if isinstance(data, dict) else None
+        return d if isinstance(d, list) else []
+
+    async def async_hide_albums(
+        self,
+        album_ids: list[int],
+        album_type: int,
+        hidden: bool = True,
+    ) -> dict[str, Any]:
+        """隐藏/显示相册（``/gallery/modifyAlbumsHiddenStatus``，**POST**）。
+
+        ``hidden=True`` 隐藏，``False`` 显示。⚠️ 逆向推断，未实机验证。
+        """
+        body: dict[str, Any] = {
+            "albumIds": [int(i) for i in album_ids],
+            "albumType": int(album_type),
+            "hidden": bool(hidden),
+        }
+        return await self._request(
+            API_HIDE_ALBUMS, method="POST", json_body=body
+        )
+
+    async def async_merge_face_albums(
+        self,
+        target_id: int,
+        source_ids: list[int],
+    ) -> dict[str, Any]:
+        """合并人脸相册（``/gallery/mergeFaceAlbums``，**POST**）。
+
+        把多个人脸相册合并到 ``target_id``。⚠️ 逆向推断，未实机验证。
+        """
+        body: dict[str, Any] = {
+            "targetAlbumId": int(target_id),
+            "sourceAlbumIds": [int(i) for i in source_ids],
+        }
+        return await self._request(
+            API_MERGE_FACE_ALBUM, method="POST", json_body=body
+        )
+
+    async def async_add_album_members_async(
+        self,
+        album_id: int,
+        album_type: int,
+        file_ids: list[int | str],
+    ) -> dict[str, Any]:
+        """异步添加相册成员（``/gallery/addAlbumMembAsync``，**POST**）。
+
+        大相册（几百张以上）推荐用这个，返回 ``taskId`` 后用
+        :meth:`async_add_album_members_task_query` 查进度。⚠️ 逆向推断，未实机验证。
+        """
+        body: dict[str, Any] = {
+            "albumId": int(album_id),
+            "albumType": int(album_type),
+            "membs": [{"fileId": int(i)} for i in file_ids],
+        }
+        return await self._request(
+            API_ALBUM_ADD_MEMB_ASYNC, method="POST", json_body=body
+        )
+
+    async def async_add_album_members_task_query(
+        self, task_id: str
+    ) -> dict[str, Any]:
+        """异步加成员任务进度查询（``/gallery/taskStatus``，**GET**）。
+
+        ``task_id`` 来自 :meth:`async_add_album_members_async` 的响应。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        return await self._request(
+            API_ALBUM_ADD_MEMB_TASK_QUERY, {"taskId": task_id}
+        )
+
+    async def async_share_to_person(
+        self,
+        file_ids: list[int | str],
+        receiver_user_ids: list[str],
+        auto_expire_days: int = 0,
+    ) -> dict[str, Any]:
+        """同步式分享给个人（``/gallery/shareToPerson``，**POST**）。
+
+        与 :meth:`async_add_share_to_person`（异步版）的区别：同步阻塞直到完成。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        creds = await self.async_ensure_credentials()
+        body: dict[str, Any] = {
+            "fileIds": [int(i) for i in file_ids],
+            "receiverUserIds": receiver_user_ids,
+            "autoExpireDays": int(auto_expire_days),
+            "senderUserId": creds.cloud_dev_id,
+        }
+        return await self._request(
+            API_SHARE_TO_PERSON, method="POST", json_body=body
+        )
+
+    async def async_share_to_person_status(
+        self, task_id: str
+    ) -> dict[str, Any]:
+        """查询分享任务状态（``/gallery/shareToPersonStatus``，**GET**）。
+
+        ``task_id`` 来自 :meth:`async_share_to_person` 或 App 的分享。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        return await self._request(
+            API_SHARE_TO_PERSON_STATUS, {"taskId": task_id}
         )
 
     async def async_get_album_inc(

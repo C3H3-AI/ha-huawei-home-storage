@@ -283,6 +283,165 @@ del_album:
         number: {min: 0, max: 10}
 
 
+search_album_photos:
+  name: 相册照片搜索
+  description: 按关键词搜索相册内的照片（逆向推断，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    keyword:
+      name: 关键词
+      required: true
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+    num:
+      name: 每页数量
+      required: false
+      selector: {number: {min: 1, max: 500}}
+    page:
+      name: 页码
+      required: false
+      selector: {number: {min: 1}}
+
+rename_media:
+  name: 重命名照片/视频
+  description: 修改照片或视频的文件名（逆向推断，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_id:
+      name: 单个文件 ID
+      required: false
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 多个文件 ID
+      required: false
+      selector: {text: {}}
+    new_name:
+      name: 新文件名
+      required: true
+      selector: {text: {}}
+
+remove_album_members:
+  name: 从相册移除照片
+  description: 把照片/视频从相册里移出（文件本身不删）（逆向推断，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+    file_id:
+      name: 单个文件 ID
+      required: false
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 多个文件 ID
+      required: false
+      selector: {text: {}}
+
+hide_albums:
+  name: 隐藏/显示相册
+  description: 隐藏相册（在 App 的「隐藏相册」里可见）或恢复显示（逆向推断，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 单个相册 ID
+      required: false
+      selector: {number: {min: 0}}
+    album_ids:
+      name: 多个相册 ID
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+    hidden:
+      name: 隐藏
+      required: false
+      selector: {boolean: {}}
+
+list_all_albums:
+  name: 列出全部相册
+  description: 含隐藏相册、系统相册、推荐相册（比 list_albums 全。逆向推断，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+share_to_person:
+  name: 分享给个人
+  description: 同步式分享照片/视频给指定用户（异步版已有 add_share_to_person。逆向推断，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_id:
+      name: 单个文件 ID
+      required: false
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 多个文件 ID
+      required: false
+      selector: {text: {}}
+    receiver_user_id:
+      name: 接收者用户 ID
+      required: false
+      selector: {text: {}}
+    receiver_user_ids:
+      name: 多个接收者用户 ID
+      required: false
+      selector: {text: {}}
+    auto_expire_days:
+      name: 自动过期天数
+      required: false
+      selector: {number: {min: 0}}
+
+merge_face_albums:
+  name: 合并人脸相册
+  description: 把多个人脸相册合并到目标相册（有人脸相册的用户才需要。逆向推断，未实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    target_album_id:
+      name: 目标相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    source_album_id:
+      name: 单个源相册 ID
+      required: false
+      selector: {number: {min: 0}}
+    source_album_ids:
+      name: 多个源相册 ID
+      required: false
+      selector: {text: {}}
+
+
 album_photos:
   name: 相册照片
   description: 列出相册内的照片（含路径与缩略图），支持游标分页
