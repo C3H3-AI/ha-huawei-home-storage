@@ -57,6 +57,8 @@ SERVICE_CANCEL_UPLOAD = "cancel_upload"
 SERVICE_COPY_TO_ALBUM = "copy_to_album"
 SERVICE_LIST_RECYCLE = "list_recycle"
 SERVICE_RECOVER_RECYCLE = "recover_recycle"
+SERVICE_DELETE_RECYCLE_ITEMS = "permanent_delete_recycle_items"
+SERVICE_EMPTY_RECYCLE = "empty_recycle"
 SERVICE_FILE_DETAIL = "file_detail"
 SERVICE_SEARCH_FILES = "search_files"
 SERVICE_PHOTO_INFO = "photo_info"
@@ -563,6 +565,124 @@ async def async_register_services(hass: HomeAssistant) -> None:
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "count": len(items), "items": items}
 
+    async def _resolve_recycle_rids(
+        hass: HomeAssistant, data: dict[str, Any], category: str
+    ) -> list[int]:
+        """从 call.data 里解析出回收站条目 rid 列表（三个回收站服务共用）。
+
+        接受三种输入：
+        * ``rids`` / ``rid``（int 或 str 或 list）—— 直接用
+        * ``paths`` / ``names`` —— 从回收站列表里按 name / path 匹配
+        * 都没给 —— 自动调 ``async_list_recycle`` 取第一条（
+          ``recycleDelFiles`` 的 action=clear 只需要任意 1 个 rid，
+          App UI 上也是取第一条就 break）
+        """
+        # 优先用直接给的 rid / rids
+        raw = data.get("rids") or data.get("rid")
+        if raw is not None:
+            items = raw if isinstance(raw, list) else [raw]
+            return [int(r) for r in items if r not in (None, "")]
+        # 按 paths / names 匹配
+        wanted = _paths(data) or [
+            str(n) for n in (data.get("names") or [])
+        ]
+        # 用闭包里已有的 _pick / runtime，懒加载避免循环导入
+        runtime, _, err = _pick(hass, data.get("entry_id"))
+        if err:
+            return []
+        try:
+            items = await runtime.client.async_list_recycle(
+                # recycleDelFiles category 口径：空串=我的文件，public=共享；
+                # batchOperation 用 user，这里把 user 映射成空串
+                category=("" if category == "user" else category),
+                limit=500,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("读取回收站失败: %s", exc)
+            return []
+        if not wanted:
+            # 没给匹配条件 → 自动取第一条（给 empty_recycle / clear 用）
+            first = items[0] if items else None
+            if first and first.get("rid") is not None:
+                return [int(first["rid"])]
+            return []
+
+        def _match(item: dict[str, Any]) -> bool:
+            iname = str(item.get("name") or "")
+            ipath = str(item.get("path") or "")
+            return any(
+                w.rstrip("/") == iname or w.rstrip("/").endswith(iname)
+                or (ipath and ipath.rstrip("/") == w.rstrip("/"))
+                or (ipath and ipath.rstrip("/").endswith(w.rstrip("/")))
+                for w in wanted
+            )
+
+        hits = [i for i in items if _match(i)]
+        return [int(i.get("rid")) for i in hits if i.get("rid") is not None]
+
+    async def _delete_recycle_items(call: "ServiceCall") -> "ServiceResponse":
+        """永久删除回收站里的条目（``recycleDelFiles?action=remove``）。
+
+        ⚠️ **不可逆**：删完回收站就没了，进文件空间恢复不了。
+
+        逆向自智慧生活 App 插件 ``517616675.jar``（2026-10-13）：
+        body ``{"action":"remove","files":[rid1, rid2, ...]}``。
+
+        ``rids`` 可直接给（数字或字符串都转 int）；也可给 ``paths`` /
+        ``names``，由回收站列表里自动匹配。
+        """
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        cat = call.data.get("category") or DEFAULT_CATEGORY
+        rids = await _resolve_recycle_rids(hass, call.data, cat)
+        if not rids:
+            return {"ok": False, "error": "没解析到任何 rid"}
+        _LOGGER.warning("permanent_delete_recycle_items：%d 条回收站条目永久删除",
+                        len(rids))
+        try:
+            result = await runtime.client.async_recycle_operate(
+                action="remove", rids=rids, category=cat,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("永久删除回收站条目失败(rids=%s): %s", rids, exc)
+            return {"ok": False, "error": str(exc)}
+        await runtime.fast.async_request_refresh()
+        ok, dev_err = _device_ok(result)
+        return {"ok": ok, "count": len(rids),
+                "error": dev_err, "result": result}
+
+    async def _empty_recycle(call: "ServiceCall") -> "ServiceResponse":
+        """清空整个回收站（``recycleDelFiles?action=clear``）。
+
+        ⚠️ **不可逆**：删完回收站就没了，所有条目都永久消失。
+
+        逆向自智慧生活 App 插件 ``517616675.jar``（2026-10-13）：
+        body ``{"action":"clear","files":[任意1个rid]}``——App UI 上只取
+        回收站列表第一条的 rid 就 break 了，所以这里也只取第一条。
+        """
+        runtime, _, err = _pick(hass, call.data.get("entry_id"))
+        if err:
+            return err
+        cat = call.data.get("category") or DEFAULT_CATEGORY
+        _LOGGER.warning("empty_recycle：清空整个回收站（所有条目永久删除，不可逆）")
+        # clear 需要至少 1 个 rid（App UI 上是取列表第一条）
+        rids = await _resolve_recycle_rids(hass, call.data, cat)
+        if not rids:
+            return {"ok": False, "error":
+                    "clear 需要至少 1 个 rid（随便哪个都行），但回收站为空或没给 rid"}
+        try:
+            result = await runtime.client.async_recycle_operate(
+                action="clear", rids=[rids[0]], category=cat,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("清空回收站失败: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        await runtime.fast.async_request_refresh()
+        ok, dev_err = _device_ok(result)
+        return {"ok": ok, "action": "clear",
+                "error": dev_err, "result": result}
+
     # ------------------------------------------------------------------
     # 文件空间写入
     # ------------------------------------------------------------------
@@ -709,11 +829,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 "error": dev_err, "result": result}
 
     async def _delete_paths(call: "ServiceCall") -> "ServiceResponse":
-        """删除文件空间里的文件/目录 —— **统一进回收站**（可逆）。
+        """删除文件空间里的文件/目录。
 
-        集成**不提供永久删除**：设备侧 ``type=delete`` 与
-        ``/filesvc/recycleDelFiles`` 的参数都没解出（实测恒 ``1101``），
-        回收站条目只能在客户端 App 里清理。
+        * ``skip_recycle=False``（默认）→ **进回收站**（可逆，用 recover_recycle 还原）
+        * ``skip_recycle=True`` → **永久删除**（逆向实据：batchOperation body 加 operationType=force，2026-10-13）
         """
         runtime, entry, err = _pick(hass, call.data.get("entry_id"))
         if err:
@@ -722,19 +841,23 @@ async def async_register_services(hass: HomeAssistant) -> None:
             return bad
         paths = _paths(call)
         category = call.data.get("category") or DEFAULT_CATEGORY
-        _LOGGER.warning("delete_paths：把 %d 项移入回收站（可用 recover_recycle 还原）",
-                        len(paths))
+        skip = bool(call.data.get("skip_recycle"))
+        _LOGGER.warning("delete_paths：%d 项 %s",
+                        len(paths),
+                        "直接永久删除（skip_recycle=True）" if skip
+                        else "移入回收站（可用 recover_recycle 还原）")
         try:
             result = await runtime.client.async_delete_paths(
                 paths, _entry_device_id(entry),
-                to_recycle=True, category=category,
+                to_recycle=not skip, category=category,
             )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("删除路径失败(%s): %s", paths, exc)
             return {"ok": False, "error": str(exc)}
         await runtime.fast.async_request_refresh()
         ok, dev_err = _device_ok(result)
-        return {"ok": ok, "count": len(paths), "to_recycle": True,
+        return {"ok": ok, "count": len(paths),
+                "to_recycle": not skip,
                 "error": dev_err, "result": result}
 
     async def _upload_file(call: "ServiceCall") -> "ServiceResponse":
@@ -924,7 +1047,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
     async def _recover_recycle(call: "ServiceCall") -> "ServiceResponse":
         """从回收站恢复（``batchOperation?operation=recycle&type=recover``）。
 
-        ``rid`` 可直接给；也可给 ``paths``/``names`` 由回收站列表里匹配。
+        ``rids`` 可直接给；也可给 ``paths``/``names`` 由回收站列表里匹配。
         """
         runtime, entry, err = _pick(hass, call.data.get("entry_id"))
         if err:
@@ -932,36 +1055,26 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if (bad := _need_device_id(entry)) is not None:
             return bad
         category = call.data.get("category") or DEFAULT_CATEGORY
-        rid = call.data.get("rid")
+        rids = await _resolve_recycle_rids(hass, call.data, category)
+        if not rids:
+            return {"ok": False, "error": "没解析到任何 rid（给 rids / rid / paths / names 其中之一）"}
+        # 只恢复第一个（现有 batchOperation 只支持单条 recover；
+        # 要批量的话可以循环调用）
+        rid = rids[0]
+        # 查 name / item_type（从回收站列表里取，或者直接用默认值）
         name = call.data.get("name") or ""
         item_type = int(call.data.get("item_type", 4))
-        if rid is None:
-            wanted = _paths(call) or [str(n) for n in call.data.get("names") or []]
-            if not wanted:
-                return {"ok": False, "error": "rid / paths / names 至少给一个"}
+        if not name or item_type == 4:
             try:
                 items = await runtime.client.async_list_recycle(
-                    category=category, limit=500
+                    category=category, limit=500,
                 )
-            except Exception as exc:  # noqa: BLE001
-                return {"ok": False, "error": f"读取回收站失败: {exc}"}
-
-            def _match(item: dict[str, Any]) -> bool:
-                iname = str(item.get("name") or "")
-                ipath = str(item.get("path") or "")
-                return any(
-                    w.rstrip("/") == iname or w.rstrip("/").endswith(iname)
-                    or (ipath and ipath.rstrip("/") == w.rstrip("/"))
-                    or (ipath and ipath.rstrip("/").endswith(w.rstrip("/")))
-                    for w in wanted
-                )
-
-            hit = next((i for i in items if _match(i)), None)
-            if hit is None:
-                return {"ok": False, "error": f"回收站里没找到: {wanted}"}
-            rid = hit.get("rid")
-            name = str(hit.get("name") or name)
-            item_type = int(hit.get("type") or item_type or 0)
+                hit = next((i for i in items if int(i.get("rid", -1)) == rid), None)
+                if hit:
+                    name = str(hit.get("name") or name)
+                    item_type = int(hit.get("type") or item_type or 0)
+            except Exception:  # noqa: BLE001
+                pass
         try:
             result = await runtime.client.async_recycle_recover(
                 rid, name=name, device_id=_entry_device_id(entry),
@@ -1105,6 +1218,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             **entry_field,
             vol.Required("paths"): path_list,
             vol.Optional("category"): CATEGORY,
+            vol.Optional("skip_recycle", default=False): cv.boolean,
         }),
         supports_response=SupportsResponse.ONLY,
     )
@@ -1171,6 +1285,26 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Optional("names"): vol.All(cv.ensure_list, [str]),
             vol.Optional("category"): CATEGORY,
             vol.Optional("item_type", default=4): vol.Coerce(int),
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DELETE_RECYCLE_ITEMS, _delete_recycle_items,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Optional("rids"): vol.All(cv.ensure_list, [vol.Coerce(int)]),
+            vol.Optional("rid"): vol.Coerce(int),
+            vol.Optional("paths"): vol.All(cv.ensure_list, [str]),
+            vol.Optional("names"): vol.All(cv.ensure_list, [str]),
+            vol.Optional("category"): CATEGORY,
+        }),
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_EMPTY_RECYCLE, _empty_recycle,
+        schema=vol.Schema({
+            **entry_field,
+            vol.Optional("category"): CATEGORY,
         }),
         supports_response=SupportsResponse.ONLY,
     )

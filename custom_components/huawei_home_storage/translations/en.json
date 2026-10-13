@@ -433,7 +433,7 @@
     },
     "delete_paths": {
       "name": "Delete files/folders",
-      "description": "Delete files or folders from the file space — always moved to the recycle bin (recoverable).",
+      "description": "Delete files or folders from the file space — moved to recycle bin by default; skip_recycle=true to permanently delete.",
       "fields": {
         "paths": {
           "name": "Paths",
@@ -442,6 +442,10 @@
         "category": {
           "name": "Space",
           "description": "user = My Files; public = Shared."
+        },
+        "skip_recycle": {
+          "name": "Skip recycle bin",
+          "description": "true = permanently delete without recycle bin (⚠️ irreversible)."
         }
       }
     },
@@ -620,6 +624,42 @@
         "item_type": {
           "name": "Entry type",
           "description": "4 = folder, 0 = file."
+        }
+      }
+    },
+    "permanent_delete_recycle_items": {
+      "name": "Permanently delete recycle bin items",
+      "description": "Permanently remove items from the recycle bin (⚠️ irreversible).",
+      "fields": {
+        "rids": {
+          "name": "Recycle bin rid list",
+          "description": "e.g. [82, 123]; or use paths/names to auto-match."
+        },
+        "rid": {
+          "name": "Single rid",
+          "description": "Delete a single item."
+        },
+        "paths": {
+          "name": "Paths",
+          "description": "Auto-match rids by path from the recycle bin list."
+        },
+        "names": {
+          "name": "Names",
+          "description": "Auto-match rids by name from the recycle bin list."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "empty_recycle": {
+      "name": "Empty recycle bin",
+      "description": "Wipe the entire recycle bin at once (⚠️ all items permanently gone).",
+      "fields": {
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
         }
       }
     },
