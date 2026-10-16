@@ -618,7 +618,51 @@ class HuaweiHomeStorageAccountsFlow(_AccountStepsMixin, OptionsFlow):
         return self._show_menu()
 
     def _extra_menu_options(self) -> list[str]:
-        return ["host"]
+        return ["host", "panel_access"]
+
+    # ------------------------------------------------------------------
+    async def async_step_panel_access(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """侧边栏面板谁可见（仅管理员 / 所有用户）。
+
+        面板里能浏览家庭存储的私密照片与文件，默认仅管理员可见（issue #35）。
+        HA 面板层只有 ``require_admin``，没有 per-user 授权，所以这里只能二选一。
+
+        ⚠️ 与 ``async_step_host`` 同理：必须写进 ``entry.data``。
+        ``panel.py`` 读的是 ``entry.data``，写进 options 会**完全无效**。
+        """
+        from .const import (
+            CONF_PANEL_ADMIN_ONLY,
+            DEFAULT_PANEL_ADMIN_ONLY,
+        )
+
+        if user_input is not None:
+            admin_only = bool(user_input.get(CONF_PANEL_ADMIN_ONLY, True))
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, CONF_PANEL_ADMIN_ONLY: admin_only},
+            )
+            _LOGGER.info(
+                "面板可见性已保存：%s（条目 %s）",
+                "仅管理员" if admin_only else "所有用户",
+                self._entry.entry_id,
+            )
+            return self.async_create_entry(data=dict(self._entry.options))
+
+        current = self._entry.data.get(
+            CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY
+        )
+        return self.async_show_form(
+            step_id="panel_access",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_PANEL_ADMIN_ONLY, default=bool(current)
+                    ): bool
+                }
+            ),
+        )
 
     # ------------------------------------------------------------------
     async def async_step_host(

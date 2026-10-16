@@ -41,6 +41,12 @@ CONF_DEVICE_MAC = "device_mac"      # 设备网卡 MAC（devInfo.mac）
 CONF_DEVICE_SN = "device_sn"        # 设备序列号（devInfo.sn）
 CONF_DEVICE_MODEL = "device_model"  # 设备型号（devInfo.model / hwv）
 
+# 侧边栏面板可见性：True = 仅管理员可见（默认，隐私优先，见 issue #35）。
+# 面板里能浏览家庭存储的私密照片与文件；HA 的面板层**只有** require_admin
+# 这一个开关（原生没有 per-user 授权），所以默认收紧到管理员。
+CONF_PANEL_ADMIN_ONLY = "panel_admin_only"
+DEFAULT_PANEL_ADMIN_ONLY = True
+
 DEFAULT_PRODUCT = "home-assistant"
 
 #: 配置条目的数据结构版本。

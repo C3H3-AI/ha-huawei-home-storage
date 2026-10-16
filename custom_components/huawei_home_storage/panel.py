@@ -84,6 +84,28 @@ async def _get_translations(hass: HomeAssistant) -> dict[str, str]:
         return {}
 
 
+def _panel_require_admin(hass: HomeAssistant) -> bool:
+    """面板是否仅管理员可见。
+
+    面板里能浏览家庭存储的私密照片与文件，而 HA 面板层只有 ``require_admin``
+    这一个开关（原生没有 per-user 授权），所以**默认收紧到管理员**
+    （issue #35：所有 HA 用户都能看到家庭存储文件）。
+
+    用户可在「配置」里改成所有人可见；未设置过时按默认（管理员）处理。
+    """
+    from .const import (
+        CONF_PANEL_ADMIN_ONLY,
+        DEFAULT_PANEL_ADMIN_ONLY,
+        DOMAIN,
+    )
+
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        data = entry.data or {}
+        if CONF_PANEL_ADMIN_ONLY in data:
+            return bool(data[CONF_PANEL_ADMIN_ONLY])
+    return DEFAULT_PANEL_ADMIN_ONLY
+
+
 async def async_register_panel(hass: HomeAssistant) -> None:
     """注册静态目录与侧边栏面板（幂等）。"""
     if hass.data.get(PANEL_FLAG):
@@ -112,7 +134,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             sidebar_title=PANEL_TITLE,
             sidebar_icon=PANEL_ICON,
             config={},
-            require_admin=False,
+            require_admin=_panel_require_admin(hass),
             embed_iframe=False,
         )
     except ValueError:
