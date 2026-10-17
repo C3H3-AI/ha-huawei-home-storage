@@ -125,7 +125,8 @@
           "add_account": "Add account",
           "remove_account": "Remove account",
           "relogin": "Re-login an account",
-          "host": "Device IP (set manually if auto-detect fails)"
+          "host": "Device IP (set manually if auto-detect fails)",
+          "panel_access": "Panel visibility (who can see it)"
         }
       },
       "host": {
@@ -168,6 +169,13 @@
       "acct_challenge_channel": {
         "title": "Choose verification method",
         "description": "This Huawei account needs a verification code. Choose how to receive it: **SMS** sends the code to the phone bound to the account; **Signed-in device** requires you to read it on a Huawei device already signed in to this account."
+      },
+      "panel_access": {
+        "title": "Panel visibility",
+        "description": "The panel can browse private photos and files on the storage. Home Assistant panels only support \"admin only\" (no per-user access control). Keep admin-only unless you want every HA user to see it.",
+        "data": {
+          "panel_admin_only": "Admin only (recommended)"
+        }
       }
     },
     "abort": {
