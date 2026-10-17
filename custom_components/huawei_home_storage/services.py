@@ -99,6 +99,40 @@ SERVICE_ALL_TRANS_TASKS = "all_trans_tasks"
 
 REFRESH_SCHEMA = vol.Schema({vol.Optional("entry_id"): str})
 
+# ⚠️ 不可逆/高风险服务的确认词：调用方必须**显式**传对才执行。
+#
+# 起因（2026-10-17 实测）：``shutdown_device`` 此前**空 payload 就能触发**，
+# 而它是「设备彻底断电、需物理按键重启」的不可逆操作 —— 一次误调用
+# （批量探测 50 个服务时）真的把设备关机了，用户只能物理开机。
+#
+# 所以这些服务加一道**显式确认**：schema 层用 ``vol.In([word])`` 让值必须
+# 完全等于确认词（大小写敏感），处理函数再校验一次（防绕过 schema 的内部调用）。
+#
+# ⚠️ 这是**破坏性变更**：已有自动化若调用这些服务需要补上 confirm 字段。
+# 权衡：误关机的代价（设备断电 + 跑过去按物理键）远大于改一次自动化。
+CONFIRM_SHUTDOWN = "SHUTDOWN"
+CONFIRM_REBOOT = "REBOOT"
+CONFIRM_EMPTY_RECYCLE = "EMPTY_RECYCLE"
+CONFIRM_PERMANENT_DELETE = "PERMANENT_DELETE"
+
+
+def _confirm_field(word: str) -> dict:
+    """必填确认字段（schema 用）：值必须完全等于给定词。"""
+    return {vol.Required("confirm"): vol.In([word])}
+
+
+def _reject_unconfirmed(call: "ServiceCall", word: str) -> ServiceResponse | None:
+    """未确认则返回错误响应；已确认返回 ``None``（调用方继续）。"""
+    if str(call.data.get("confirm") or "") != word:
+        return {
+            "ok": False,
+            "error": (
+                f"该操作不可逆，必须显式传 confirm: \"{word}\" 才会执行"
+                f"（当前值: {str(call.data.get('confirm') or '')!r}）"
+            ),
+        }
+    return None
+
 #: 文件空间的两个**独立**空间：user = 「我的文件」，public = 「共享」
 CATEGORY = vol.In(("user", "public"))
 #: 默认空间与集成其它入口一致（``FILE_FILES_CATEGORY`` = user）——
@@ -208,6 +242,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
+        if (blocked := _reject_unconfirmed(call, CONFIRM_REBOOT)) is not None:
+            return blocked
         _LOGGER.warning("收到 reboot_device 服务调用：设备将重启，服务中断约 1-2 分钟")
         try:
             result = await runtime.client.async_post_device_reboot()
@@ -224,6 +260,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
+        if (blocked := _reject_unconfirmed(call, CONFIRM_SHUTDOWN)) is not None:
+            return blocked
         _LOGGER.warning("收到 shutdown_device 服务调用：设备将**彻底关机**，需物理重启（不可逆）")
         try:
             result = await runtime.client.async_post_device_shutdown()
@@ -240,17 +278,26 @@ async def async_register_services(hass: HomeAssistant) -> None:
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
-        result: dict[str, Any] = {"ok": True}
+        # ⚠️ 此前这里写死 ``{"ok": True}``，于是**两个子端点都失败时也报成功**
+        # （实测本机：basic/smart 都返回 code=1，服务仍 ok=True）——调用方
+        # 无法用 ok 判断成败，会误以为拿到了磁盘健康数据。改成按实际结果定。
+        result: dict[str, Any] = {}
+        ok = False
         try:
             result["basic"] = await runtime.client.async_get_disk_basic_info()
+            ok = True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("diskBasicInfo 失败(可能未实现): %s", exc)
             result["basic_error"] = str(exc)
         try:
             result["smart"] = await runtime.client.async_get_disk_smart_info()
+            ok = True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("diskSmartInfo 失败(可能未实现): %s", exc)
             result["smart_error"] = str(exc)
+        result["ok"] = ok
+        if not ok:
+            result["error"] = "磁盘诊断两个端点均不可用（设备可能未实现该接口）"
         return result
 
     async def _raid_status(call: "ServiceCall") -> "ServiceResponse":
@@ -938,6 +985,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
+        if (blocked := _reject_unconfirmed(call, CONFIRM_PERMANENT_DELETE)) is not None:
+            return blocked
         cat = call.data.get("category") or DEFAULT_CATEGORY
         rids = await _resolve_recycle_rids(hass, call.data, cat)
         if not rids:
@@ -968,6 +1017,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         runtime, _, err = _pick(hass, call.data.get("entry_id"))
         if err:
             return err
+        if (blocked := _reject_unconfirmed(call, CONFIRM_EMPTY_RECYCLE)) is not None:
+            return blocked
         cat = call.data.get("category") or DEFAULT_CATEGORY
         _LOGGER.warning("empty_recycle：清空整个回收站（所有条目永久删除，不可逆）")
         # clear 需要至少 1 个 rid（App UI 上是取列表第一条）
@@ -1596,6 +1647,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_DELETE_RECYCLE_ITEMS, _delete_recycle_items,
         schema=vol.Schema({
             **entry_field,
+            **_confirm_field(CONFIRM_PERMANENT_DELETE),
             vol.Optional("rids"): vol.All(cv.ensure_list, [vol.Coerce(int)]),
             vol.Optional("rid"): vol.Coerce(int),
             vol.Optional("paths"): vol.All(cv.ensure_list, [str]),
@@ -1608,6 +1660,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_EMPTY_RECYCLE, _empty_recycle,
         schema=vol.Schema({
             **entry_field,
+            **_confirm_field(CONFIRM_EMPTY_RECYCLE),
             vol.Optional("category"): CATEGORY,
         }),
         supports_response=SupportsResponse.ONLY,
@@ -1874,12 +1927,12 @@ async def async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_REBOOT_DEVICE, _reboot_device,
-        schema=vol.Schema(entry_field),
+        schema=vol.Schema({**entry_field, **_confirm_field(CONFIRM_REBOOT)}),
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN, SERVICE_SHUTDOWN_DEVICE, _shutdown_device,
-        schema=vol.Schema(entry_field),
+        schema=vol.Schema({**entry_field, **_confirm_field(CONFIRM_SHUTDOWN)}),
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
