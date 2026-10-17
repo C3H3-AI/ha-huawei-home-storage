@@ -618,7 +618,70 @@ class HuaweiHomeStorageAccountsFlow(_AccountStepsMixin, OptionsFlow):
         return self._show_menu()
 
     def _extra_menu_options(self) -> list[str]:
-        return ["host", "panel_access"]
+        return ["host", "panel_access", "user_accounts"]
+
+    # ------------------------------------------------------------------
+    async def async_step_user_accounts(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """HA 用户 → 华为账号的可见范围映射（issue #35 进阶需求）。
+
+        面板开给所有人后，默认每个 HA 用户都能看到**所有**华为账号的文件。
+        本步骤可配置「哪个 HA 用户只能看哪个/哪些华为账号」，由后端强制
+        执行（``views._visible_account_keys``），前端传参无法绕过。
+
+        留空 = 不作限制（维持现状）。管理员始终不受限（否则无法管理账号）。
+
+        ⚠️ 与 ``async_step_host`` 同理：必须写进 ``entry.data``。
+        """
+        from .const import CONF_USER_ACCOUNT_MAP
+
+        if user_input is not None:
+            raw = str(user_input.get(CONF_USER_ACCOUNT_MAP) or "").strip()
+            mapping: dict[str, Any] = {}
+            if raw:
+                try:
+                    import json as _json
+
+                    parsed = _json.loads(raw)
+                    if isinstance(parsed, dict):
+                        mapping = parsed
+                except Exception:  # noqa: BLE001
+                    return self.async_show_form(
+                        step_id="user_accounts",
+                        data_schema=vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_USER_ACCOUNT_MAP, default=raw
+                                ): str
+                            }
+                        ),
+                        errors={"base": "invalid_json"},
+                    )
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, CONF_USER_ACCOUNT_MAP: mapping},
+            )
+            _LOGGER.info(
+                "用户→账号映射已保存：%d 条（条目 %s）",
+                len(mapping),
+                self._entry.entry_id,
+            )
+            return self.async_create_entry(data=dict(self._entry.options))
+
+        current = self._entry.data.get(CONF_USER_ACCOUNT_MAP) or {}
+        default = ""
+        if current:
+            import json as _json
+
+            default = _json.dumps(current, ensure_ascii=False)
+        return self.async_show_form(
+            step_id="user_accounts",
+            data_schema=vol.Schema(
+                {vol.Optional(CONF_USER_ACCOUNT_MAP, default=default): str}
+            ),
+        )
+
 
     # ------------------------------------------------------------------
     async def async_step_panel_access(

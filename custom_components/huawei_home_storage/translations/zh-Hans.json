@@ -126,7 +126,8 @@
           "remove_account": "移除账号",
           "relogin": "重新登录某个账号",
           "host": "设备 IP（自动获取失败时手动指定）",
-          "panel_access": "面板可见性（谁能看到）"
+          "panel_access": "面板可见性（谁能看到）",
+          "user_accounts": "按用户分配账号"
         }
       },
       "host": {
@@ -175,6 +176,16 @@
         "description": "面板可浏览家庭存储里的私密照片与文件。HA 面板只有「仅管理员」这一个开关（没有按用户授权）。除非你希望所有 HA 用户都能看到，否则请保持仅管理员。",
         "data": {
           "panel_admin_only": "仅管理员（推荐）"
+        }
+      },
+      "user_accounts": {
+        "title": "按用户分配账号",
+        "description": "限制每个 HA 用户能看到哪些华为账号。JSON 映射，值为账号 key 或 key 列表，例如 {\"alice\": \"137****6363\", \"bob\": [\"137****1234\"]}。留空=不限制。管理员始终不受限（否则无法管理账号）。",
+        "data": {
+          "user_account_map": "映射（JSON）"
+        },
+        "errors": {
+          "invalid_json": "JSON 格式不正确，请检查。"
         }
       }
     },
