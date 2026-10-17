@@ -47,15 +47,6 @@ CONF_DEVICE_MODEL = "device_model"  # 设备型号（devInfo.model / hwv）
 CONF_PANEL_ADMIN_ONLY = "panel_admin_only"
 DEFAULT_PANEL_ADMIN_ONLY = True
 
-# HA 用户 → 华为账号的可见范围（issue #35 的进阶需求）：
-#   {"张三": ["137****6363"], "李四": "137****1234"}
-# 值可以是单个 key 或 key 列表；key 是账号在条目内的稳定标识
-# （``account["key"]``，通常是手机号/邮箱）。
-#
-# 只在**配置了本项**时生效，且**只约束非管理员** —— 管理员始终可看全部，
-# 否则没法做账号管理。未配置 = 维持现状（向后兼容）。
-CONF_USER_ACCOUNT_MAP = "user_account_map"
-
 DEFAULT_PRODUCT = "home-assistant"
 
 #: 配置条目的数据结构版本。

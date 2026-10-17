@@ -469,12 +469,24 @@ class HuaweiStorageFilesView(HomeAssistantView):
         if (vis := _visible_account_keys(
             request.app["hass"].config_entries.async_get_entry(entry_id), request
         )) is not None:
+            # 允许列表为空 → 一个账号都不给看
+            if not vis:
+                return web.json_response(
+                    {"error": "当前用户未被授权任何账号"}, status=403
+                )
             if account and account not in vis:
                 return web.json_response(
                     {"error": "当前用户无权访问该账号"}, status=403
                 )
             if not account:
-                account = vis[0] if vis else ""
+                account = vis[0]
+            # ⚠️ 关键：account 必须**真实存在**。否则 ``_client_of`` 会把未知
+            # 账号 fallback 到主客户端（实测：配了不存在的 key 照样看到全部数据），
+            # 隔离形同虚设。
+            if account not in (getattr(runtime, "clients", None) or {}):
+                return web.json_response(
+                    {"error": "当前用户无权访问该账号"}, status=403
+                )
         client = _client_of(runtime, account)
         category = "public" if space == "public" else "user"
         try:
@@ -588,12 +600,24 @@ class HuaweiStorageAlbumsView(HomeAssistantView):
         if (vis := _visible_account_keys(
             request.app["hass"].config_entries.async_get_entry(entry_id), request
         )) is not None:
+            # 允许列表为空 → 一个账号都不给看
+            if not vis:
+                return web.json_response(
+                    {"error": "当前用户未被授权任何账号"}, status=403
+                )
             if account and account not in vis:
                 return web.json_response(
                     {"error": "当前用户无权访问该账号"}, status=403
                 )
             if not account:
-                account = vis[0] if vis else ""
+                account = vis[0]
+            # ⚠️ 关键：account 必须**真实存在**。否则 ``_client_of`` 会把未知
+            # 账号 fallback 到主客户端（实测：配了不存在的 key 照样看到全部数据），
+            # 隔离形同虚设。
+            if account not in (getattr(runtime, "clients", None) or {}):
+                return web.json_response(
+                    {"error": "当前用户无权访问该账号"}, status=403
+                )
         key = account or _primary_key(runtime)
 
         groups = []
@@ -721,12 +745,24 @@ class HuaweiStorageAlbumPhotosView(HomeAssistantView):
         if (vis := _visible_account_keys(
             request.app["hass"].config_entries.async_get_entry(entry_id), request
         )) is not None:
+            # 允许列表为空 → 一个账号都不给看
+            if not vis:
+                return web.json_response(
+                    {"error": "当前用户未被授权任何账号"}, status=403
+                )
             if account and account not in vis:
                 return web.json_response(
                     {"error": "当前用户无权访问该账号"}, status=403
                 )
             if not account:
-                account = vis[0] if vis else ""
+                account = vis[0]
+            # ⚠️ 关键：account 必须**真实存在**。否则 ``_client_of`` 会把未知
+            # 账号 fallback 到主客户端（实测：配了不存在的 key 照样看到全部数据），
+            # 隔离形同虚设。
+            if account not in (getattr(runtime, "clients", None) or {}):
+                return web.json_response(
+                    {"error": "当前用户无权访问该账号"}, status=403
+                )
         client = _client_of(runtime, account)
         try:
             res = await client.async_get_album_photos(
@@ -807,12 +843,24 @@ class HuaweiStorageRecycleView(HomeAssistantView):
         if (vis := _visible_account_keys(
             request.app["hass"].config_entries.async_get_entry(entry_id), request
         )) is not None:
+            # 允许列表为空 → 一个账号都不给看
+            if not vis:
+                return web.json_response(
+                    {"error": "当前用户未被授权任何账号"}, status=403
+                )
             if account and account not in vis:
                 return web.json_response(
                     {"error": "当前用户无权访问该账号"}, status=403
                 )
             if not account:
-                account = vis[0] if vis else ""
+                account = vis[0]
+            # ⚠️ 关键：account 必须**真实存在**。否则 ``_client_of`` 会把未知
+            # 账号 fallback 到主客户端（实测：配了不存在的 key 照样看到全部数据），
+            # 隔离形同虚设。
+            if account not in (getattr(runtime, "clients", None) or {}):
+                return web.json_response(
+                    {"error": "当前用户无权访问该账号"}, status=403
+                )
         client = _client_of(runtime, account)
         try:
             items = await client.async_list_recycle(
