@@ -126,7 +126,8 @@
           "remove_account": "移除账号",
           "relogin": "重新登录某个账号",
           "host": "设备 IP（自动获取失败时手动指定）",
-          "panel_access": "面板可见性（谁能看到）"
+          "panel_access": "面板可见性（谁能看到）",
+          "user_accounts": "按用户分配账号"
         }
       },
       "host": {
@@ -175,6 +176,16 @@
         "description": "面板可浏览家庭存储里的私密照片与文件。HA 面板只有「仅管理员」这一个开关（没有按用户授权）。除非你希望所有 HA 用户都能看到，否则请保持仅管理员。",
         "data": {
           "panel_admin_only": "仅管理员（推荐）"
+        }
+      },
+      "user_accounts": {
+        "title": "按用户分配账号",
+        "description": "限制每个 HA 用户能看到哪些华为账号。JSON 映射，值为账号 key 或 key 列表，例如 {\"alice\": \"137****6363\", \"bob\": [\"137****1234\"]}。留空=不限制。管理员始终不受限（否则无法管理账号）。",
+        "data": {
+          "user_account_map": "映射（JSON）"
+        },
+        "errors": {
+          "invalid_json": "JSON 格式不正确，请检查。"
         }
       }
     },
@@ -589,7 +600,7 @@
     },
     "list_recycle": {
       "name": "列回收站",
-      "description": "列出回收站条目（返回的 rid 供 recover_recycle 使用）。",
+      "description": "列出回收站条目（返回的 rid 供 recover_recycle 使用）。｜【实测】可用",
       "fields": {
         "category": {
           "name": "空间",
@@ -637,7 +648,7 @@
     },
     "permanent_delete_recycle_items": {
       "name": "永久删除回收站条目",
-      "description": "把回收站里的条目永久删掉（⚠️ 不可逆）。",
+      "description": "把回收站里的条目永久删掉（⚠️ 不可逆）。｜⚠️ 不可逆：永久删除；需 confirm 确认（未执行）",
       "fields": {
         "rids": {
           "name": "回收站 rid 列表",
@@ -663,7 +674,7 @@
     },
     "empty_recycle": {
       "name": "清空回收站",
-      "description": "一键清空整个回收站（⚠️ 所有条目永久消失）。",
+      "description": "一键清空整个回收站（⚠️ 所有条目永久消失）。｜⚠️ 不可逆：清空回收站；需 confirm 确认（未执行）",
       "fields": {
         "category": {
           "name": "空间",
@@ -681,7 +692,7 @@
     },
     "task_status": {
       "name": "查询传输任务",
-      "description": "查任务中心：filesvc = 文件空间任务，trans = 跨服务传输任务。",
+      "description": "查任务中心：filesvc = 文件空间任务，trans = 跨服务传输任务。｜【实测】可用",
       "fields": {
         "service": {
           "name": "任务来源",
@@ -721,7 +732,7 @@
     },
     "disk_info": {
       "name": "磁盘诊断",
-      "description": "查询磁盘基础状态 + SMART 健康（两个端点合在一个响应里）",
+      "description": "查询磁盘基础状态 + SMART 健康（两个端点合在一个响应里）｜【实测】本机两个端点均返回 code=1，服务如实报 ok=False",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -731,7 +742,7 @@
     },
     "raid_status": {
       "name": "RAID 状态",
-      "description": "RAID 阵列状态。非 RAID 设备会返回 error",
+      "description": "RAID 阵列状态。非 RAID 设备会返回 error｜【实测】本机返回 code=22（非 RAID 设备）",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -813,7 +824,7 @@
     },
     "album_info": {
       "name": "相册详情",
-      "description": "单个相册的元数据与封面原图路径（相册列表里封面为空时的兜底）。",
+      "description": "单个相册的元数据与封面原图路径（相册列表里封面为空时的兜底）。｜【实测】可用",
       "fields": {
         "album_id": {
           "name": "相册 ID",
@@ -841,7 +852,7 @@
     },
     "share_to_person": {
       "name": "共享到人物",
-      "description": "把照片共享到人物相册（ownerId 用设备用户 id）。",
+      "description": "把照片共享到人物相册（ownerId 用设备用户 id）。｜【注意】需 receiver_user_id(s)；未执行（会改设备数据）",
       "fields": {
         "album_id": {
           "name": "相册 ID",
@@ -881,7 +892,7 @@
     },
     "add_album": {
       "name": "创建相册",
-      "description": "新建相册（逆向推断实现，未实机验证）",
+      "description": "新建相册（逆向推断实现，未实机验证）｜⚠️ 推断实现未实机验证，且会**创建相册**（未执行）",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -899,7 +910,7 @@
     },
     "del_album": {
       "name": "删除相册",
-      "description": "⚠️ 删除相册（不可逆！逆向推断未实机验证）",
+      "description": "⚠️ 删除相册（不可逆！逆向推断未实机验证）｜⚠️ 推断实现未实机验证，且会**删除相册**（未执行）",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -917,7 +928,7 @@
     },
     "search_album_photos": {
       "name": "相册照片搜索",
-      "description": "按关键词搜索相册内的照片（逆向推断，未实机验证）",
+      "description": "按关键词搜索相册内的照片（逆向推断，未实机验证）｜【实测】本机 /gallery/search 返回 code=1，暂不可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -943,7 +954,7 @@
     },
     "rename_media": {
       "name": "重命名照片/视频",
-      "description": "修改照片或视频的文件名（逆向推断，未实机验证）",
+      "description": "修改照片或视频的文件名（逆向推断，未实机验证）｜【实测】本机 /gallery/modifyFileAttr 返回 code=30104，暂不可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -965,7 +976,7 @@
     },
     "remove_album_members": {
       "name": "从相册移除照片",
-      "description": "把照片/视频从相册里移出（文件本身不删）（逆向推断，未实机验证）",
+      "description": "把照片/视频从相册里移出（文件本身不删）（逆向推断，未实机验证）｜【实测】本机 /gallery/delAlbumMemb 返回 code=30110，暂不可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -991,7 +1002,7 @@
     },
     "hide_albums": {
       "name": "隐藏/显示相册",
-      "description": "隐藏相册（在 App 的「隐藏相册」里可见）或恢复显示（逆向推断，未实机验证）",
+      "description": "隐藏相册（在 App 的「隐藏相册」里可见）或恢复显示（逆向推断，未实机验证）｜【实测】本机 /gallery/modifyAlbumsHiddenStatus 返回 code=30102，暂不可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -1017,7 +1028,7 @@
     },
     "list_all_albums": {
       "name": "列出全部相册",
-      "description": "含隐藏相册、系统相册、推荐相册（比 list_albums 全。逆向推断，未实机验证）",
+      "description": "含隐藏相册、系统相册、推荐相册（比 list_albums 全。逆向推断，未实机验证）｜【实测】可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -1027,7 +1038,7 @@
     },
     "merge_face_albums": {
       "name": "合并人脸相册",
-      "description": "把多个人脸相册合并到目标相册（有人脸相册的用户才需要。逆向推断，未实机验证）",
+      "description": "把多个人脸相册合并到目标相册（有人脸相册的用户才需要。逆向推断，未实机验证）｜⚠️ 推断实现未实机验证，且会**合并人物相册**（未执行）",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -1049,7 +1060,7 @@
     },
     "recent_files": {
       "name": "最近文件",
-      "description": "设备侧最近访问/修改的文件列表",
+      "description": "设备侧最近访问/修改的文件列表｜【实测】可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -1063,7 +1074,7 @@
     },
     "installed_plugins": {
       "name": "已装插件",
-      "description": "家庭存储设备上已安装的插件列表（acelite 接口）",
+      "description": "家庭存储设备上已安装的插件列表（acelite 接口）｜【实测】可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -1073,7 +1084,7 @@
     },
     "all_trans_tasks": {
       "name": "全量传输任务",
-      "description": "设备上所有传输任务（move/copy/upload 等，trans 域）",
+      "description": "设备上所有传输任务（move/copy/upload 等，trans 域）｜【实测】可用",
       "fields": {
         "entry_id": {
           "name": "配置条目 ID",
@@ -1083,7 +1094,7 @@
     },
     "album_photos": {
       "name": "相册照片",
-      "description": "列出相册内的照片（含路径与缩略图），支持游标分页。",
+      "description": "列出相册内的照片（含路径与缩略图），支持游标分页。｜【实测】可用",
       "fields": {
         "album_id": {
           "name": "相册 ID",
@@ -1145,7 +1156,7 @@
     },
     "device_diagnostics": {
       "name": "设备诊断",
-      "description": "一次性取回设备错误码、维修模式、Samba 共享状态（排障用）。"
+      "description": "一次性取回设备错误码、维修模式、Samba 共享状态（排障用）。｜【实测】可用"
     }
   },
   "common": {
