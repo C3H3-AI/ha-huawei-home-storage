@@ -39,6 +39,13 @@ reboot_device:
   name: 重启存储设备
   description: ⚠️ 会中断存储服务约 1-2 分钟（可恢复）。集成永不自动重启
   fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "REBOOT"（大小写敏感）才会执行。设备重启，服务中断约 1-2 分钟。
+      example: "REBOOT"
     entry_id:
       name: 配置条目 ID
       required: false
@@ -49,6 +56,13 @@ shutdown_device:
   name: 关机
   description: ⚠️ 彻底关机设备（不可逆，需物理按键重启。逆向推断未实机验证）
   fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "SHUTDOWN"（大小写敏感）才会执行。设备彻底关机，需物理按键重启。
+      example: "SHUTDOWN"
     entry_id:
       name: 配置条目 ID
       required: false
@@ -1036,6 +1050,13 @@ permanent_delete_recycle_items:
   name: 永久删除回收站条目
   description: 把回收站里的条目永久删掉（⚠️ 不可逆！逆向推导待实机验证）
   fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "PERMANENT_DELETE"（大小写敏感）才会执行。回收站条目永久删除。
+      example: "PERMANENT_DELETE"
     entry_id:
       name: 配置条目 ID
       required: false
@@ -1074,6 +1095,13 @@ empty_recycle:
   name: 清空回收站
   description: 一键清空整个回收站（⚠️ 所有条目永久消失！逆向推导待实机验证）
   fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "EMPTY_RECYCLE"（大小写敏感）才会执行。清空回收站，所有条目永久消失。
+      example: "EMPTY_RECYCLE"
     entry_id:
       name: 配置条目 ID
       required: false
