@@ -1146,6 +1146,10 @@
     "device_diagnostics": {
       "name": "设备诊断",
       "description": "一次性取回设备错误码、维修模式、Samba 共享状态（排障用）。"
+    },
+    "photos_table_full": {
+      "name": "全量照片表（分页）",
+      "description": "拉取全量照片信息表（一页 500 条），用于面板首次加载或本地缓存重建。把上一页的 lastRowId 作为 row_id 传入翻页，count=0 表示到底。⚠️ 实测本机返回 code=30102，端点存在但设备有额外要求，暂不可用。"
     }
   },
   "common": {
