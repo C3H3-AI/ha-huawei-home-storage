@@ -405,35 +405,6 @@ list_all_albums:
       required: false
       selector: {text: {}}
 
-share_to_person:
-  name: 分享给个人
-  description: 同步式分享照片/视频给指定用户（异步版已有 add_share_to_person。逆向推断，未实机验证）｜【实测】需 receiver_user_id(s)，未做真实分享验证（会改设备数据）
-  fields:
-    entry_id:
-      name: 配置条目 ID
-      required: false
-      selector: {text: {}}
-    file_id:
-      name: 单个文件 ID
-      required: false
-      selector: {number: {min: 0}}
-    file_ids:
-      name: 多个文件 ID
-      required: false
-      selector: {text: {}}
-    receiver_user_id:
-      name: 接收者用户 ID
-      required: false
-      selector: {text: {}}
-    receiver_user_ids:
-      name: 多个接收者用户 ID
-      required: false
-      selector: {text: {}}
-    auto_expire_days:
-      name: 自动过期天数
-      required: false
-      selector: {number: {min: 0}}
-
 merge_face_albums:
   name: 合并人脸相册
   description: 把多个人脸相册合并到目标相册（有人脸相册的用户才需要。逆向推断，未实机验证）｜⚠️ 逆向推断未实机验证，且会**合并人物相册**（实测未执行）
