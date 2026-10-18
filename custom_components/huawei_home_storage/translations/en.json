@@ -126,7 +126,8 @@
           "remove_account": "Remove account",
           "relogin": "Re-login an account",
           "host": "Device IP (set manually if auto-detect fails)",
-          "panel_access": "Panel visibility (who can see it)"
+          "panel_access": "Panel visibility (who can see it)",
+          "user_accounts": "Per-user account access"
         }
       },
       "host": {
@@ -175,6 +176,13 @@
         "description": "The panel can browse private photos and files on the storage. Home Assistant panels only support \"admin only\" (no per-user access control). Keep admin-only unless you want every HA user to see it.",
         "data": {
           "panel_admin_only": "Admin only (recommended)"
+        }
+      },
+      "user_accounts": {
+        "title": "Per-user account access",
+        "description": "Restrict which Huawei account(s) each Home Assistant user can see. Enter a JSON mapping of HA user name to an account key or a list of keys (for example: alice -> 137****6363, bob -> two keys). Leave empty for no restriction. Admins are never restricted.",
+        "data": {
+          "user_account_map": "Mapping (JSON)"
         }
       }
     },
@@ -589,7 +597,7 @@
     },
     "list_recycle": {
       "name": "List recycle bin",
-      "description": "List recycle bin entries (their rid is used by recover_recycle).",
+      "description": "List recycle bin entries (their rid is used by recover_recycle). | 【tested】works",
       "fields": {
         "category": {
           "name": "Space",
@@ -637,7 +645,7 @@
     },
     "permanent_delete_recycle_items": {
       "name": "Permanently delete recycle bin items",
-      "description": "Permanently remove items from the recycle bin (⚠️ irreversible).",
+      "description": "Permanently remove items from the recycle bin (⚠️ irreversible). | ⚠️ irreversible: permanent delete; requires confirm (not executed)",
       "fields": {
         "rids": {
           "name": "Recycle bin rid list",
@@ -663,7 +671,7 @@
     },
     "empty_recycle": {
       "name": "Empty recycle bin",
-      "description": "Wipe the entire recycle bin at once (⚠️ all items permanently gone).",
+      "description": "Wipe the entire recycle bin at once (⚠️ all items permanently gone). | ⚠️ irreversible: clears the recycle bin; requires confirm (not executed)",
       "fields": {
         "category": {
           "name": "Space",
@@ -681,7 +689,7 @@
     },
     "task_status": {
       "name": "Query transfer tasks",
-      "description": "Query the task center: filesvc = file-space tasks, trans = cross-service transfers.",
+      "description": "Query the task center: filesvc = file-space tasks, trans = cross-service transfers. | 【tested】works",
       "fields": {
         "service": {
           "name": "Task source",
@@ -721,7 +729,7 @@
     },
     "disk_info": {
       "name": "Disk diagnostics",
-      "description": "Query disk basic status + SMART health (combined in one response)",
+      "description": "Query disk basic status + SMART health (combined in one response) | 【tested】both endpoints return code=1 on our device; service now reports ok=False",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -731,7 +739,7 @@
     },
     "raid_status": {
       "name": "RAID status",
-      "description": "RAID array status. Non-RAID devices return an error",
+      "description": "RAID array status. Non-RAID devices return an error | 【tested】returns code=22 on our device (non-RAID), as documented",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -813,7 +821,7 @@
     },
     "album_info": {
       "name": "Album detail",
-      "description": "Metadata and cover image paths for one album (fallback when the album list has no cover).",
+      "description": "Metadata and cover image paths for one album (fallback when the album list has no cover). | 【tested】works",
       "fields": {
         "album_id": {
           "name": "Album ID",
@@ -841,7 +849,7 @@
     },
     "share_to_person": {
       "name": "Share to person",
-      "description": "Share photos to a person album (ownerId is a device user id).",
+      "description": "Share photos to a person album (ownerId is a device user id). | 【note】needs receiver_user_id(s); not executed (it would change device data)",
       "fields": {
         "album_id": {
           "name": "Album ID",
@@ -881,7 +889,7 @@
     },
     "add_album": {
       "name": "Create album",
-      "description": "Create a new album (inferred implementation, not tested)",
+      "description": "Create a new album (inferred implementation, not tested) | ⚠️ reverse-engineered, not verified on a real device; it **creates an album** (not executed)",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -899,7 +907,7 @@
     },
     "del_album": {
       "name": "Delete album",
-      "description": "⚠️ Delete an album (irreversible! Inferred, not tested)",
+      "description": "⚠️ Delete an album (irreversible! Inferred, not tested) | ⚠️ reverse-engineered, not verified; it **deletes an album** (not executed)",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -917,7 +925,7 @@
     },
     "search_album_photos": {
       "name": "Search album photos",
-      "description": "Search photos in an album by keyword (inferred, not tested)",
+      "description": "Search photos in an album by keyword (inferred, not tested) | 【tested】/gallery/search returns code=1 on our device — not usable yet",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -943,7 +951,7 @@
     },
     "rename_media": {
       "name": "Rename media",
-      "description": "Rename a photo or video file (inferred, not tested)",
+      "description": "Rename a photo or video file (inferred, not tested) | 【tested】/gallery/modifyFileAttr returns code=30104 on our device",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -965,7 +973,7 @@
     },
     "remove_album_members": {
       "name": "Remove album members",
-      "description": "Remove photos/videos from an album (files not deleted. Inferred, not tested)",
+      "description": "Remove photos/videos from an album (files not deleted. Inferred, not tested) | 【tested】/gallery/delAlbumMemb returns code=30110 on our device",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -991,7 +999,7 @@
     },
     "hide_albums": {
       "name": "Hide/show albums",
-      "description": "Hide albums (visible in App's hidden albums section) or show them (inferred, not tested)",
+      "description": "Hide albums (visible in App's hidden albums section) or show them (inferred, not tested) | 【tested】/gallery/modifyAlbumsHiddenStatus returns code=30102 on our device",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -1017,7 +1025,7 @@
     },
     "list_all_albums": {
       "name": "List all albums",
-      "description": "Includes hidden albums, system albums, recommended albums (more complete than list_albums. Inferred, not tested)",
+      "description": "Includes hidden albums, system albums, recommended albums (more complete than list_albums. Inferred, not tested) | 【tested】works",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -1027,7 +1035,7 @@
     },
     "merge_face_albums": {
       "name": "Merge face albums",
-      "description": "Merge multiple face albums into target (only for users with face albums. Inferred, not tested)",
+      "description": "Merge multiple face albums into target (only for users with face albums. Inferred, not tested) | ⚠️ reverse-engineered, not verified; it **merges face albums** (not executed)",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -1049,7 +1057,7 @@
     },
     "recent_files": {
       "name": "Recent files",
-      "description": "Recently accessed/modified files on the device",
+      "description": "Recently accessed/modified files on the device | 【tested】works",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -1063,7 +1071,7 @@
     },
     "installed_plugins": {
       "name": "Installed plugins",
-      "description": "List of plugins installed on the device (acelite API)",
+      "description": "List of plugins installed on the device (acelite API) | 【tested】works",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -1073,7 +1081,7 @@
     },
     "all_trans_tasks": {
       "name": "All transfer tasks",
-      "description": "All transfer tasks on the device (move/copy/upload, trans domain)",
+      "description": "All transfer tasks on the device (move/copy/upload, trans domain) | 【tested】works",
       "fields": {
         "entry_id": {
           "name": "Config entry ID",
@@ -1083,7 +1091,7 @@
     },
     "album_photos": {
       "name": "Album photos",
-      "description": "List photos in an album (with paths and thumbnails), cursor paging supported.",
+      "description": "List photos in an album (with paths and thumbnails), cursor paging supported. | 【tested】works",
       "fields": {
         "album_id": {
           "name": "Album ID",
@@ -1145,7 +1153,7 @@
     },
     "device_diagnostics": {
       "name": "Device diagnostics",
-      "description": "Fetch device error code, repair mode and Samba share status in one call (troubleshooting)."
+      "description": "Fetch device error code, repair mode and Samba share status in one call (troubleshooting). | 【tested】works"
     }
   },
   "common": {
