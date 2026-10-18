@@ -405,35 +405,6 @@ list_all_albums:
       required: false
       selector: {text: {}}
 
-share_to_person:
-  name: 分享给个人
-  description: 同步式分享照片/视频给指定用户（异步版已有 add_share_to_person。逆向推断，未实机验证）
-  fields:
-    entry_id:
-      name: 配置条目 ID
-      required: false
-      selector: {text: {}}
-    file_id:
-      name: 单个文件 ID
-      required: false
-      selector: {number: {min: 0}}
-    file_ids:
-      name: 多个文件 ID
-      required: false
-      selector: {text: {}}
-    receiver_user_id:
-      name: 接收者用户 ID
-      required: false
-      selector: {text: {}}
-    receiver_user_ids:
-      name: 多个接收者用户 ID
-      required: false
-      selector: {text: {}}
-    auto_expire_days:
-      name: 自动过期天数
-      required: false
-      selector: {number: {min: 0}}
-
 merge_face_albums:
   name: 合并人脸相册
   description: 把多个人脸相册合并到目标相册（有人脸相册的用户才需要。逆向推断，未实机验证）
@@ -1143,3 +1114,66 @@ recover_media:
       required: true
       example: "281474976710690"
       selector: {text: {}}
+
+upload_to_album:
+  name: 上传照片到相册
+  description: >-
+    上传照片进相册（走 /gallery/prepareUpload 取相册域 fileId，设备会把它纳入相册索引），
+    可选同时加入指定相册。与 upload_file 的区别：后者走 /filesvc，文件只落在文件空间、不进相册。
+    local_path 只允许读 HA 的 uploads 目录。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    local_path:
+      name: 本地文件路径（HA 主机上）
+      required: true
+      example: /config/uploads/photo.jpg
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID（可选，填则上传后加入该相册）
+      required: false
+      example: 16
+      selector: {number: {mode: box}}
+    album_type:
+      name: 相册类型
+      required: false
+      default: 6
+      selector: {number: {mode: box, min: 0, max: 30}}
+    album_name:
+      name: 相册名（加入时用）
+      required: false
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      default: user
+      selector:
+        select:
+          options:
+            - label: 我的文件
+              value: user
+            - label: 共享空间
+              value: public
+
+photos_table_full:
+  name: 全量照片表（分页）
+  description: >-
+    拉取全量照片信息表（一页默认 500 条），用于面板首次加载或本地缓存重建。
+    ⚠️ 实测本机返回 code=30102，设备对该端点有额外要求，暂不可用；保留以记录该能力。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    row_id:
+      name: 起始 rowId（上一页的 lastRowId）
+      required: false
+      default: 0
+      selector: {number: {mode: box, min: 0}}
+    num:
+      name: 每页条数
+      required: false
+      default: 500
+      selector: {number: {mode: box, min: 1, max: 500}}

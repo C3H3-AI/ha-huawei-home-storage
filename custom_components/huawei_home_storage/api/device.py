@@ -34,6 +34,8 @@ from ..const import (
     API_DISK_CHANGE,
     API_FILES,
     API_HEARTBEAT,
+    API_PHOTOS_FULL,
+    PHOTO_PAGE_SIZE,
     API_PHOTOS_INC,
     API_QUERY_BIN,
     API_RECYCLE,
@@ -927,6 +929,35 @@ class HuaweiDeviceClient:
     async def async_get_photos_table(self, pre_row_id: int = 0) -> dict[str, Any]:
         """照片增量表：``{deviceId, fileId, operation, rowId}``，固定 500 条/页。"""
         return await self._request(API_PHOTOS_INC, {"preRowId": pre_row_id})
+
+    async def async_get_photos_table_full(
+        self, row_id: int = 0, num: int = PHOTO_PAGE_SIZE
+    ) -> dict[str, Any]:
+        """全量照片表（``/gallery/getFullPhotosInfoTable``，GET）。
+
+        与 :meth:`async_get_photos_table`（增量，``preRowId`` 游标）的区别：这里
+        是**从头拉全部**，用于面板首次加载或本地缓存重建 —— 2.5 万张照片逐张
+        ``album_photos`` 往返不现实，必须走这个表。
+
+        ⚠️ 参数名 ``rowId`` 是**逆向推断**（App 插件只确认端点存在，见
+        ``RequestUri$GalleryUri.FULL_LIST``；同族的 inc 版用 ``preRowId``，
+        但全量版语义上是「从 rowId 开始」，故不叫 pre*）。首次返回 500 条/页。
+        """
+        creds = await self.async_ensure_credentials()
+        # ⚠️ 端点存在但本机返回 30102（inc 版同族端点历史可用）。这是**推断未验证**
+        # 的端点：App 插件 RequestUri$GalleryUri.FULL_LIST 确认常量存在，但设备
+        # 侧似乎对该端点有额外要求（clientType/deviceId 都试过，仍 30102）。
+        # 不再盲试参数，如需实现请先抓包确认。
+        data = await self._request(API_PHOTOS_FULL, {"rowId": int(row_id)})
+        payload = data.get("data")
+        rows = payload if isinstance(payload, list) else (payload or {}).get("list") or []
+        return {
+            "photos": rows,
+            "lastRowId": max(
+                (int(r.get("rowId") or 0) for r in rows), default=int(row_id)
+            ),
+            "count": len(rows),
+        }
 
     async def async_query_bin(
         self, offset: int = 0, num: int = 100

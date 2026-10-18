@@ -1146,6 +1146,10 @@
     "device_diagnostics": {
       "name": "Device diagnostics",
       "description": "Fetch device error code, repair mode and Samba share status in one call (troubleshooting)."
+    },
+    "photos_table_full": {
+      "name": "Full photo table (paged)",
+      "description": "Pull the full photo info table (500 rows/page) for first load or cache rebuild. Pass lastRowId as row_id for the next page; count=0 means the end. NOTE: returns code=30102 on our device — endpoint exists but the device requires more, not usable yet."
     }
   },
   "common": {
