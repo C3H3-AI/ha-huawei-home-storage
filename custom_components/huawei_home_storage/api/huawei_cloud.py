@@ -90,6 +90,34 @@ def _is_authorization_pending(payload: Mapping[str, Any]) -> bool:
     return "not scan" in desc or "pending" in desc
 
 
+# message-center 登录重试：华为云偶发慢响应，单次失败不应让整个集成不可用
+LOGIN_RETRY_ATTEMPTS = 3
+LOGIN_RETRY_BACKOFF = 2.0
+
+
+def _err_text(err: BaseException) -> str:
+    """把网络异常变成可读文本。
+
+    Python 3.11+ 起 ``asyncio.TimeoutError`` 是 ``TimeoutError`` 的别名，
+    ``str(err)`` 为空串，直接插进 f-string 会得到「登录失败: 」这种无信息报错。
+    这里按异常类型补齐描述，让日志能直接看出是超时还是连接/DNS/TLS 问题。
+    """
+    text = str(err).strip()
+    if text:
+        return f"{type(err).__name__}: {text}"
+    name = type(err).__name__
+    if "Timeout" in name:
+        return f"{name} (请求超时，检查网络或华为云响应)"
+    if "ClientConnector" in name:
+        return f"{name} (无法连接，检查 DNS/路由/防火墙)"
+    if "ClientSSLError" in name or "ClientConnectorSSLError" in name or "ClientCertificate" in name:
+        return f"{name} (TLS 握手失败)"
+    if "ClientResponseError" in name:
+        return f"{name} (服务端返回错误状态)"
+    if "ServerDisconnected" in name:
+        return f"{name} (服务端主动断开)"
+    return name or repr(err)
+
 class HuaweiCloudError(Exception):
     """云侧通用错误。"""
 
@@ -199,7 +227,7 @@ def decrypt_credentials(
         #
         # 刻意不记录明文内容（可能含下发的凭据），只记长度。
         raise HuaweiCloudError(
-            f"解密结果 JSON 解析失败（明文 {len(text)} 字节，未记录内容）: {err}"
+            f"解密结果 JSON 解析失败（明文 {len(text)} 字节，未记录内容）: {_err_text(err)}"
         ) from err
     return creds
 
@@ -386,7 +414,7 @@ class HuaweiCloudClient:
             ) as resp:
                 payload = await resp.json(content_type=None)
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise HuaweiCloudError(f"申请设备码失败: {err}") from err
+            raise HuaweiCloudError(f"申请设备码失败: {_err_text(err)}") from err
         if "device_code" not in payload:
             raise HuaweiCloudError(f"申请设备码被拒: {payload}")
         return payload
@@ -415,7 +443,7 @@ class HuaweiCloudClient:
                 payload = await resp.json(content_type=None)
                 status = resp.status
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise HuaweiCloudError(f"轮询设备码失败: {err}") from err
+            raise HuaweiCloudError(f"轮询设备码失败: {_err_text(err)}") from err
 
         if status == 200 and payload.get("access_token"):
             return payload
@@ -461,7 +489,7 @@ class HuaweiCloudClient:
                     payload = await resp.json(content_type=None)
                     status = resp.status
             except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-                raise HuaweiCloudError(f"刷新 access_token 失败: {err}") from err
+                raise HuaweiCloudError(f"刷新 access_token 失败: {_err_text(err)}") from err
 
             if status != 200 or not payload.get("access_token"):
                 raise HuaweiCloudAuthError(
@@ -498,16 +526,34 @@ class HuaweiCloudClient:
             },
             "language": "ZH",
         }
-        try:
-            async with self._session.post(
-                SMARTHOME_BASE + API_CLOUD_LOGIN,
-                json=payload,
-                headers=self._cloud_headers(access_token),
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
-            ) as resp:
-                data = await resp.json(content_type=None)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise HuaweiCloudError(f"message-center 登录失败: {err}") from err
+        # 华为云偶发慢响应；单次超时就整个集成不可用太脆，这里做有限重试。
+        # 只对超时和连接类错误重试，业务错误（如 401）直接抛出。
+        last_err: BaseException | None = None
+        for attempt in range(1, LOGIN_RETRY_ATTEMPTS + 1):
+            try:
+                async with self._session.post(
+                    SMARTHOME_BASE + API_CLOUD_LOGIN,
+                    json=payload,
+                    headers=self._cloud_headers(access_token),
+                    timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+                ) as resp:
+                    data = await resp.json(content_type=None)
+                last_err = None
+                break
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                last_err = err
+                if attempt >= LOGIN_RETRY_ATTEMPTS:
+                    break
+                _LOGGER.debug(
+                    "message-center 登录第 %d/%d 次失败（%s），%.1fs 后重试",
+                    attempt, LOGIN_RETRY_ATTEMPTS, _err_text(err), LOGIN_RETRY_BACKOFF,
+                )
+                await asyncio.sleep(LOGIN_RETRY_BACKOFF * attempt)
+        if last_err is not None:
+            raise HuaweiCloudError(
+                f"message-center 登录失败（重试 {LOGIN_RETRY_ATTEMPTS} 次）: "
+                f"{_err_text(last_err)}"
+            ) from last_err
         if "mqttTopic" not in data and "mqttClientId" not in data:
             raise HuaweiCloudError(f"message-center 登录返回异常: {str(data)[:200]}")
         return data
@@ -523,7 +569,7 @@ class HuaweiCloudClient:
             ) as resp:
                 data = await resp.json(content_type=None)
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise HuaweiCloudError(f"获取云设备列表失败: {err}") from err
+            raise HuaweiCloudError(f"获取云设备列表失败: {_err_text(err)}") from err
         if isinstance(data, dict) and data.get("errorCode"):
             raise HuaweiCloudError(f"获取云设备列表失败: {str(data)[:200]}")
         return data if isinstance(data, list) else []
