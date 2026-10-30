@@ -305,19 +305,29 @@ class UploadSurfaceTest(unittest.TestCase):
 
 
 class GalleryUploadStatusTest(unittest.TestCase):
-    """相册域上传**未跑通**的事实必须被代码如实记录。
+    """相册域上传的**真实状态**必须被代码如实记录。
 
-    否则后人看到 ``service_type="gallery"`` 会以为「上传照片进相册」能用，
-    直接接到服务上，结果设备回 ``30104`` —— 而这类失败在静态检查里看不见。
+    ⚠️ 这条测试自己错过一次，值得记下来：它原来断言"注释里必须写着卡在
+    ``30104``、没跑通"，把那次的**错误结论**钉成了事实。2026-10-30 用 PC
+    客户端完整抓包证明该结论是错的 —— 设备支持，是我们三处实现有错：
+
+    1. 报文模型照插件反编译写成 ``dataList`` + ``hash``（实际是 ``files``）；
+    2. 相册分支定义 ``prep_items`` 却用 ``prep_files`` 发请求 → 调用即
+       ``NameError``，且没有调用方，所以从未被执行；
+    3. ``mediaType`` 恒为 ``0``，照片被当成普通文件，相册收不进去。
+
+    教训：**测试要锁"实现是否符合抓包事实"，不要锁"上一轮的结论"**。
+    结论会被推翻，把结论写进断言就等于把错误固化下来。
     """
 
-    def test_transfer_documents_gallery_not_working(self):
+    def test_transfer_documents_gallery_correctly(self):
         src = _read(TRANSFER)
         idx = src.index("service_type")
         window = src[idx: idx + 3000]
-        self.assertIn("30104", window, "没记录 gallery 域的真实状态（卡在 30104）")
-        self.assertTrue("没有跑通" in window or "没跑通" in window,
-                        "没记录 gallery 域的真实状态")
+        # 必须说明"可用"，且说清当年为什么误判（否则下一个人又会照反编译改回去）
+        self.assertTrue("可用" in window, "没有记录 gallery 域的真实状态（可用）")
+        self.assertIn("prep_items", window, "没有记录 prep_items/prep_files 那个笔误")
+        self.assertIn("mediaType", window, "没有记录 mediaType 必须按类型传")
 
     def test_gallery_upload_has_no_caller(self):
         """当前不该有调用方 —— 有了就意味着有人接了个跑不通的功能。"""

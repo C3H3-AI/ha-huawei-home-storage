@@ -989,9 +989,21 @@ class ReverseEngineeringContractTest(unittest.TestCase):
         seg = "\n".join(
             ln for ln in seg.split("\n") if not ln.strip().startswith("#")
         )
-        self.assertIn('prep_key = "files"', seg, "相册域没有用 files 键")
-        self.assertNotIn("dataList", seg, "相册域又用回 dataList 了（抓包证伪）")
+        # 断言"发出去的报文键名"，而不是某个中间变量名 ——
+        # 2026-10-30 这里因为改掉了中间变量（prep_files → prep_items）而误报。
+        whole = "\n".join(
+            ln for ln in body.split("\n") if not ln.strip().startswith("#")
+        )
+        self.assertIn('"files": prep_items', whole,
+                      "相册域 prepareUpload 没有用 files 键（抓包证伪 dataList）")
+        # 只断言"作为键名"出现：注释/文档里为了说明历史必然会提到 dataList，
+        # 裸词断言会被自己的注释坑（本项目已踩过多次）。
+        self.assertNotIn('"dataList"', whole, "相册域又用回 dataList 了（抓包证伪）")
         self.assertIn('"path": ""', seg, "相册域的 path 应为空串（官方客户端如此）")
+        # 防呆：相册分支必须真的把 items 用出去。曾经写成 prep_items 定义、
+        # prep_files 使用 → 调用即 NameError，而这段代码没有调用方，谁都没发现。
+        self.assertTrue(seg.count("prep_items") >= 1,
+                        "相册域没有构造 prep_items")
     def test_gallery_prepare_has_no_hash_field(self):
         """相册域 prepareUpload **没有** ``hash`` 字段（不需要 MD5）。
 

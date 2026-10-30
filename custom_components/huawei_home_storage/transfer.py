@@ -50,6 +50,27 @@ class TransferError(Exception):
     """上传/下载失败。"""
 
 
+#: 会被设备当成"图片"的扩展名。媒体类型不是随便填的：
+#: 传 0 时设备把文件当"普通文件"，`addAlbumMemb` 收不进去
+#: （2026-10-30 抓包确认，PC 客户端上传照片固定传 mediaType=1）。
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic",
+               ".heif", ".tif", ".tiff", ".jfif"}
+_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".3gp", ".wmv"}
+
+
+def _media_type_for(filename: str) -> str:
+    """按扩展名给出设备的 mediaType：1=图片，2=视频，0=普通文件。
+
+    设备只认这三个值。填错不报错，只是相册里看不到这个文件。
+    """
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    if ext in _IMAGE_EXTS:
+        return "1"
+    if ext in _VIDEO_EXTS:
+        return "2"
+    return "0"
+
+
 async def ensure_dir(client: Any, dir_path: str, category: str = "user") -> bool:
     """确保目录存在（不存在则建）。返回是否可用。
 
@@ -112,11 +133,17 @@ async def upload_stream(
     ``total_size`` 必须准确（``prepareUpload`` 要声明大小）；调用方从
     ``Content-Length`` 或备份元数据里拿。
 
-    ⚠️ **相册域（``service_type="gallery"``）至今没跑通**：真机 ``30104``，
-    抓包里官方 Windows 客户端连发 19 次 ``/gallery/prepareUpload``、0 条响应
-    （自己也在重试）。所以这条分支是**保留事实**而非可用功能 —— 别看到
-    ``gallery`` 就以为"上传照片进相册"能用。当前可行的进相册路径是：
-    先传到文件空间，再 ``copy_to_album``（``/trans/acrosscopy``）。
+    相册域（``service_type="gallery"``）：2026-10-30 用 PC 客户端完整抓包确认
+    **可用**。之前判定"跑不通"是三个错误叠加，不是设备不支持：
+
+    1. 报文模型按插件反编译写成了 ``dataList`` + ``hash``，实际是 ``files``
+       且没有 hash；
+    2. 相册分支构造的是 ``prep_items`` 却用 ``prep_files`` 发请求 —— 调用即
+       ``NameError``，而这段代码**没有任何调用方**，所以从没被执行过；
+    3. ``mediaType`` 恒为 ``"0"``，设备把照片当"普通文件"，相册收不进去。
+
+    三者都修掉后，相册域上传返回的 ``fileId``（281…）可直接喂给
+    ``/gallery/addAlbumMemb``，一步进相册，不必再走"文件空间 + acrosscopy"。
 
     ``service_type`` 决定走哪套 prepareUpload（插件反编译：
     ``TransmissionApi.filePrepareUpload`` → ``/filesvc/prepareUpload``，
@@ -154,18 +181,18 @@ async def upload_stream(
     # 相册域的 files 元素是 fileHash/fileSrcPath/hdcPath，没有 path/sessionId/taskId，
     # 且 fileHash 必须是真实文件 MD5 —— 所以相册域上传必须传 file_bytes。
     if service_type == "gallery":
-        # 相册域 prepareUpload 的**真实**报文（抓包，非反编译推断）：
-        # _frida/capture_all_1791417873.jsonl:24953 —— 官方 Windows 客户端
+        # 相册域 prepareUpload 的**真实**报文（2026-10-30 PC 客户端抓包，
+        # capture_all2.jsonl，客户端上传到相册「新建相册345」时发出）：
         #   POST /gallery/prepareUpload
         #   {"deviceId":...,"uploadType":1,"files":[{"viewPath":...,"srcPath":...,
         #     "path":"",                 <-- 空串，路径由设备分配
-        #     "sessionId":"","fileId":0,"fileSize":116316,
-        #     "orientation":0,"taskId":195}]}
+        #     "sessionId":"","fileId":0,"fileSize":4743281,
+        #     "orientation":0,"taskId":663}]}
         # 键名是 files（不是 dataList）、**没有 hash**、也没有 fileVer。
-        # ⚠️ 但这条路径至今没成功过：抓包里官方客户端连发 19 次同样请求、
-        #    0 条响应 —— 连官方 PC 端自己都在失败重试。别当成"只差一个字段"。
+        # 返回 {"code":0,"data":{"fileList":[{"fileId":281474976756232,
+        #   "sessionId":"cc7bf5...","path":"/picture/raw/0001/xx.JPG", ...}]}}
+        # —— 这个 fileId 就是**相册域**的，可直接喂给 addAlbumMemb。
         prep_path = API_GALLERY_PREPARE_UPLOAD
-        prep_key = "files"
         prep_items = [
             {
                 "viewPath": view_path,
@@ -180,7 +207,7 @@ async def upload_stream(
         ]
     else:
         prep_path = API_PREPARE_UPLOAD
-        prep_files = [
+        prep_items = [
             {
                 "viewPath": view_path,
                 "srcPath": src_path,
@@ -199,7 +226,7 @@ async def upload_stream(
         json_body={
             "deviceId": device_id,
             "uploadType": 1,
-            "files": prep_files,
+            "files": prep_items,
         },
     )
     items = (prep.get("data") or {}).get("fileList") or []
@@ -231,6 +258,11 @@ async def upload_stream(
     buf = bytearray()
     last: dict[str, Any] = {}
 
+    # ⚠️ mediaType 必须区分类型：恒为 "0" 时设备把上传当成"普通文件"，
+    # 结果就是**相册收不进去**（addAlbumMemb 找不到该 fileId）。
+    # PC 客户端上传照片时传的是 1（抓包实测 mediaType=1）。
+    media_type = _media_type_for(fname)
+
     async def _send(chunk: bytes, start: int) -> dict[str, Any]:
         """发一块。start 为该块在文件中的起始偏移。"""
         end = start + len(chunk) - 1
@@ -243,7 +275,7 @@ async def upload_stream(
             "deviceId": device_id,
             "fileId": file_id,
             "fileVer": "",
-            "mediaType": "0",
+            "mediaType": media_type,
             "mtime": str(now_ms),
             "orientation": "0",
             "service": service_type,
