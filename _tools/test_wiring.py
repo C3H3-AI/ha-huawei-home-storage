@@ -828,6 +828,12 @@ class MultiAccountServiceTest(unittest.TestCase):
         "add_album": "_add_album",
         "del_album": "_del_album",
         "share_to_person": "_share_to_person",
+        # 2026-10-30 补：这三个处理函数早就用了 _client_for，但**注册 schema
+        # 漏了 ACCOUNT_FIELD**，而面板 `accArg()` 又会带上 account
+        # → 多账号下点「重命名 / 设为封面 / 移出相册」直接 400。
+        "album_rename": "_album_rename",
+        "album_set_cover": "_album_set_cover",
+        "remove_album_members": "_remove_album_members",
     }
 
     def _schema_block(self, svc_const: str) -> str:
@@ -852,6 +858,55 @@ class MultiAccountServiceTest(unittest.TestCase):
                 "**ACCOUNT_FIELD", block,
                 f"{svc} 的 schema 没有 **ACCOUNT_FIELD —— 传了 account 也会被丢掉",
             )
+
+    def test_panel_acc_arg_requires_schema_support(self):
+        """面板凡是带 ``...accArg()`` 的调用，对应服务 schema 必须声明 ``account``。
+
+        ⚠️ 2026-10-30 真实事故：``album_rename`` / ``album_set_cover`` /
+        ``remove_album_members`` 的处理函数都用了 ``_client_for``（看着完全正确），
+        但**注册 schema 里没写 ACCOUNT_FIELD**。而面板 ``accArg()`` 在选了账号时
+        一定会带上 ``account`` → voluptuous 判定为未知字段 → 调用直接 400。
+
+        单账号下 ``accArg()`` 返回 ``{}``，所以本地怎么点都正常；多账号一选就坏。
+        这类"两边各自都对、拼起来才错"的缺陷，只有把面板调用与服务 schema
+        放在一起比对才抓得到。
+        """
+        panel = PANEL.read_text(encoding="utf-8")
+        svc_src = _read(SERVICES_PY)
+
+        # 收集面板里「带 accArg 的 svc 调用」→ 服务名
+        offenders: list[str] = []
+        checked: set[str] = set()
+        for m in re.finditer(r"svc\(([^()]*?)\{(.{0,900}?)\}\)", panel, re.S):
+            head, body = m.group(1), m.group(2)
+            if "accArg()" not in body:
+                continue
+            names = re.findall(r'"([a-z_]+)"', head)
+            for name in names:
+                const = f"SERVICE_{name.upper()}"
+                pos = svc_src.find(f"DOMAIN, {const},")
+                if pos < 0:
+                    continue  # 动态分发或常量名不同，跳过
+                checked.add(name)
+                # ⚠️ 必须截到本注册块的 endsupports_response，不能用固定长度窗口：
+                # 900 字符会跨进**下一个**服务的 schema，而那个恰好有 ACCOUNT_FIELD
+                # → 假阴性（变异验证时踩到：删掉 album_rename 的字段，测试仍绿）。
+                end = svc_src.find("supports_response", pos)
+                self.assertGreater(end, pos, f"{name} 的注册块不完整")
+                block = _strip_line_comments(svc_src[pos:end])
+                if "**ACCOUNT_FIELD" not in block:
+                    offenders.append(name)
+
+        self.assertEqual(
+            sorted(set(offenders)), [],
+            "这些服务面板会传 account，但 schema 没声明 —— 多账号下必然 400: "
+            + ", ".join(sorted(set(offenders))),
+        )
+        # 防"正则没匹配到任何东西"造成的恒真
+        self.assertGreaterEqual(
+            len(checked), 3,
+            f"只核对到 {len(checked)} 个服务，解析可能失效了",
+        )
 
     def test_handler_uses_client_for(self):
         """处理函数必须用 ``_client_for(runtime, call)``，不能直接 ``runtime.client``。"""

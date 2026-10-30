@@ -947,7 +947,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if isinstance(file_ids, (int, str)):
             file_ids = [file_ids]
         try:
-            result = await runtime.client.async_del_album_memb(
+            # ⚠️ 必须 `_client_for(runtime, call)`：schema 已声明 account，
+            # 用 `runtime.client` 会把「从账号 B 的相册移出照片」打到主账号的
+            # 同名相册上 —— 参数收了却不用，比报错更危险（静默动错账号）。
+            result = await _client_for(runtime, call).async_del_album_memb(
                 album_id=album_id, album_type=album_type,
                 file_ids=[int(i) for i in file_ids],
                 album_name=str(call.data.get("album_name") or ""),
@@ -2320,6 +2323,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Exclusive("file_id", "target"): vol.Any(int, str),
             vol.Exclusive("file_ids", "target"): [vol.Any(int, str)],
             vol.Optional("album_name"): str,
+            **ACCOUNT_FIELD,
         }),
         supports_response=SupportsResponse.ONLY,
     )
@@ -2346,6 +2350,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Required("album_id"): vol.Coerce(int),
             vol.Required("new_name"): cv.string,
             vol.Optional("album_type", default=ALBUM_TYPE_USER): vol.Coerce(int),
+            **ACCOUNT_FIELD,
         }),
         supports_response=SupportsResponse.ONLY,
     )
@@ -2357,6 +2362,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Required("cover_id"): vol.Coerce(int),
             vol.Optional("album_type", default=ALBUM_TYPE_USER): vol.Coerce(int),
             # ⚠️ 不要再加 album_name：设封面带 albumName 会返回 30111（多送字段）
+            **ACCOUNT_FIELD,
         }),
         supports_response=SupportsResponse.ONLY,
     )
