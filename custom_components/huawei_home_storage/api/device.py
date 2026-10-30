@@ -1,0 +1,2487 @@
+"""设备本地 API 客户端（HTTPS 控制通道 + 数据/图片通道）。
+
+凭据由云侧 ``startService`` 下发（见 :mod:`huawei_cloud`），会话级：
+控制通道用 ``Token`` + ``Cookie: ID=<session>``；数据通道用另一套
+``dataToken`` / ``dataSession``。凭据 TTL 很短且每次 startService 会作废旧会话，
+因此 401 时自动重新走一次云流程。
+
+⚠️ 端口是**按 client 会话分配的隧道端口**（首个账号 8471/8472，第二个账号
+可能是 8431/8432）：凭据里的 ``httpsUrl`` / ``dataHttpsUrl`` 为权威地址，
+整条使用；8471/8472 仅作无凭据时的回退。
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import json
+import logging
+import zlib
+import random
+import time as _time
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+import aiohttp
+
+from ..const import (
+    API_ALBUM_CFG,
+    API_ALBUM_INFO,
+    API_ALBUM_INC,
+    API_ALBUM_LIST,
+    API_ALBUM_MEMBERS,
+    API_ADD_ALBUM_MEMB,
+    API_ADD_SHARE_TO_PERSON,
+    API_CANCEL_UPLOAD,
+    API_CLEAN_TASK_RECORD,
+    API_DISK_CHANGE,
+    API_DYNAMIC_INFO,
+    API_PLUGIN_ADD,
+    API_PLUGIN_ALL,
+    API_PLUGIN_AUTOUPG,
+    API_PLUGIN_CANCEL,
+    API_PLUGIN_CONFIRM,
+    API_PLUGIN_DELETE,
+    API_PLUGIN_MARKET,
+    API_PLUGIN_PAUSE,
+    API_PLUGIN_RESUME,
+    API_PLUGIN_XUNLEI,
+    API_FILES,
+    API_HEARTBEAT,
+    API_PHOTOS_FULL,
+    PHOTO_PAGE_SIZE,
+    API_PHOTOS_INC,
+    API_QUERY_BIN,
+    API_RECYCLE,
+    API_RECYCLE_OPERATE,
+    API_SELECTED_PHOTOS_INFO,
+    API_USB_STATUS,
+    API_PREPARE_UPLOAD,
+    API_BATCH_OPERATION,
+    API_MKDIR,
+    API_RENAME,
+    API_FILE_DETAIL,
+    API_FILE_SEARCH,
+    API_TRANS_MOVE,
+    API_TRANS_COPY,
+    API_TRANS_ACROSSCOPY,
+    API_TRANS_ALL_TASK,
+    API_TRANS_TASK_STATUS,
+    API_TRANS_STATUS,
+    API_USER_DATA,
+    API_ONLINE_STATE,
+    API_DEVICE_INFO,
+    API_DEVICE_STATUS,
+    API_RAID_STATUS,
+    API_SAMBA_PUBLIC,
+    API_SAMBA_USER,
+    API_AUTO_UPGRADE,
+    API_WAN_INFO,
+    API_OPERATION_DEVICE,
+    API_DEV_ERR_CODE,
+    API_REPAIR_MODE_CHECK,
+    API_FILES_RECENT,
+    API_FILES_ALL,
+    API_PLUGIN_INSTALLED,
+    API_DUP_QUERY,
+    API_DUP_CTRL,
+    DUP_ACT_START,
+    DUP_ACT_STOP,
+    API_DEL_MEDIA,
+    API_RECOVER_MEDIA,
+    API_ALBUM_ADD,
+    API_ALBUM_DEL,
+    API_ALBUM_DEL_MEMB,
+    API_ALBUM_MEM_INFO,
+    API_ALL_ALBUM_LIST,
+    API_HIDE_ALBUMS,
+    API_MERGE_FACE_ALBUM,
+    API_ALBUM_ADD_MEMB_ASYNC,
+    API_ALBUM_ADD_MEMB_TASK_QUERY,
+    API_ALBUM_SEARCH,
+    API_GALLERY_MODIFY_ATTR,
+    API_SHARE_TO_PERSON,
+    API_SHARE_TO_PERSON_STATUS,
+    API_DEVICE_REBOOT,
+    API_DEVICE_SHUTDOWN,
+    API_DISK_SLEEP,
+    API_DISK_BASIC_INFO,
+    API_DISK_SMART_INFO,
+    API_USB_PLUG_OUT,
+    API_USER_MANAGE,
+    API_FILESVC_TASK_STATUS,
+    API_FILESVC_ALL_TASKS,
+    API_FILESVC_VISIBILITY,
+    API_FILESVC_RETRY_TASK,
+    DATA_DOWNLOAD_PATH,
+    DATA_DOWNLOAD_QUERY,
+    DATA_PORT,
+    DATA_UA,
+    DEVICE_CLIENT_TYPE,
+    DEVICE_PORT,
+    DEVICE_UA,
+    FILE_FILES_CATEGORY,
+    FILE_FILES_DIR_TYPE,
+    FILE_FILES_SORT,
+    FILE_ROOT_PATH,
+    FILES_PAGE_SIZE,
+    ALBUM_PAGE_SIZE,
+    ALBUM_TYPE_ALL,
+    ALBUM_TYPE_USER,
+    REQUEST_TIMEOUT,
+)
+from .huawei_cloud import DeviceCredentials, HuaweiCloudAuthError, HuaweiCloudError
+
+_LOGGER = logging.getLogger(__name__)
+
+CredsProvider = Callable[[], Awaitable[DeviceCredentials]]
+
+
+def _decompress_plugin_payload(payload: Any) -> Any:
+    """把 /acelite/*_infos 里 zlib+base64 压缩的字段还原成 dict。
+
+    设备对 ``market_infos`` 返回 ``{"hapInfos": "<base64(zlib(json))>"}``；
+    ``all_infos`` 则是明文。这里两种都兼容：字符串就尝试解压，
+    失败时原样保留（不吞数据）。
+    """
+    if not isinstance(payload, dict):
+        return payload
+    result = dict(payload)
+    for key in ("hapInfos", "marketInfos", "allInfos"):
+        raw = result.get(key)
+        if not isinstance(raw, str) or len(raw) < 16:
+            continue
+        try:
+            decoded = zlib.decompress(base64.b64decode(raw))
+            result[key] = json.loads(decoded)
+        except Exception:  # noqa: BLE001 - 解不开就保留原文
+            continue
+    return result
+
+
+class HuaweiDeviceError(Exception):
+    """设备 API 通用错误。"""
+
+
+class HuaweiDeviceAuthError(HuaweiDeviceError):
+    """设备拒绝会话凭据（401）。"""
+
+
+def encode_device_path(path: str) -> str:
+    """设备路径 → 全字节百分号编码（8472 的 ``/download`` 需要）。"""
+    return "".join("%%%02X" % b for b in path.encode())
+
+
+def derive_dev_mac(seed: str) -> str:
+    """由稳定种子派生一个本地管理的伪 MAC（12 位十六进制，小写）。
+
+    ``dev_mac`` 只是本集成向设备自称的客户端标识，无需真实网卡地址；
+    用云侧 devId 作种子可保证同一设备重复添加时得到同一个值。
+    """
+    digest = hashlib.sha256(f"huawei_home_storage:{seed}".encode()).hexdigest()
+    first = (int(digest[:2], 16) | 0x02) & 0xFE  # 本地管理地址 + 单播
+    return f"{first:02x}{digest[2:12]}"
+
+
+def _is_stale_session_code(value: Any) -> bool:
+    """业务错误码是否代表**会话失效**（而非服务故障）。
+
+    实测（2026-10-06）：同一设备被 PC 客户端与本集成用相同 client 标识时，
+    后者的 startService 会顶掉前者；被顶掉的会话调业务接口就会拿到
+    16106 / 12009，而 heartBeat / diskChange 等仍正常。重取凭据即可恢复。
+    """
+    try:
+        return int(value) in STALE_SESSION_CODES
+    except (TypeError, ValueError):
+        return False
+
+
+#: 表示「会话已被顶掉/失效」的业务错误码 → 需要重取凭据后重试
+STALE_SESSION_CODES = frozenset({16106, 12009})
+
+
+def _is_connect_error(err: BaseException) -> bool:
+    """判断是否为「连不上」类错误（隧道端口失效 / 设备离线）。
+
+    这类错误重试同一个地址没有意义，必须重新 startService 换隧道；
+    而 TLS 握手类错误重取凭据也解决不了，直接抛出更清晰。
+    """
+    if isinstance(err, asyncio.TimeoutError):
+        return True
+    text = str(err).lower()
+    markers = (
+        "cannot connect to host",
+        "connection refused",
+        "name or service not known",
+        "network is unreachable",
+        "host is down",
+        "failed to establish",
+        "econnrefused",
+        "econnreset",
+        "epipe",
+        "timed out",
+        "timeout",
+    )
+    return any(m in text for m in markers)
+
+
+class HuaweiDeviceClient:
+    """与存储设备的本地 API 交互。"""
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        host: str,
+        creds_provider: CredsProvider,
+        control_port: int = DEVICE_PORT,
+        data_port: int = DATA_PORT,
+    ) -> None:
+        self._session = session
+        self.host = host
+        self._control_port = control_port
+        self._data_port = data_port
+        self._creds_provider = creds_provider
+        self._creds: DeviceCredentials | None = None
+        #: 上次成功换取凭据的**单调时钟**（用于节流，见 async_ensure_fresh_credentials）
+        self._creds_at: float = 0.0
+        self._lock = asyncio.Lock()
+        # 设备按 client 会话分配**隧道端口**：首个账号是 8471/8472，第二个账号
+        # 可能是 8431/8432。凭据里的 httpsUrl / dataHttpsUrl 是权威地址，
+        # 拿到后整条使用；8471/8472 仅作无凭据时的回退。
+        self._control_url: str | None = None
+        self._data_url: str | None = None
+
+    # ------------------------------------------------------------------
+    # 凭据
+    # ------------------------------------------------------------------
+    @property
+    def credentials(self) -> DeviceCredentials | None:
+        return self._creds
+
+    @property
+    def user(self) -> str:
+        return self._creds.user if self._creds else ""
+
+    async def async_refresh_credentials(self) -> DeviceCredentials:
+        """向云侧换取全新设备凭据。"""
+        async with self._lock:
+            try:
+                creds = await self._creds_provider()
+            except HuaweiCloudAuthError as err:
+                # 凭据/授权真的失效（refresh_token 过期、缺 token）：
+                # 只有这种情况才该让 HA 弹重新认证。
+                raise HuaweiDeviceAuthError(f"获取设备凭据失败: {err}") from err
+            except HuaweiCloudError as err:
+                # 其它云侧故障（MQTT 超时、链路被截断、响应非 JSON 等）都是
+                # **瞬时/设备侧**问题，不是凭据失效。
+                #
+                # ⚠️ 这里曾把所有 HuaweiCloudError 都归为 AuthError，后果是：
+                # 一次 MQTT 超时就会变成 ConfigEntryAuthFailed → HA 弹出
+                # 「重新认证」，要求用户重输账号密码，而其实下一轮轮询就自愈了。
+                # 归为 DeviceError 后会走 UpdateFailed → 协调器优雅降级 + 下轮重试。
+                raise HuaweiDeviceError(f"获取设备凭据失败（可重试）: {err}") from err
+            # httpsUrl 形如 https://<host>:<port>/，端口是**本会话专属隧道**，
+            # 必须整条采用（每个账号的端口不同，8471 只是第一个账号的默认值）
+            if creds.https_url:
+                host = creds.https_url.split("//", 1)[-1].split(":")[0]
+                if host:
+                    self.host = host
+                self._control_url = creds.https_url.rstrip("/")
+            if creds.data_https_url:
+                self._data_url = creds.data_https_url.rstrip("/")
+            self._creds = creds
+            self._creds_at = _time.monotonic()
+            return creds
+
+    async def async_ensure_credentials(self) -> DeviceCredentials:
+        if self._creds is None:
+            await self.async_refresh_credentials()
+        assert self._creds is not None
+        return self._creds
+
+    async def async_ensure_fresh_credentials(
+        self, max_age: float = 45.0
+    ) -> DeviceCredentials:
+        """确保凭据"够新"，但**节流**：``max_age`` 秒内不重复向云侧换。
+
+        ⚠️ 为什么必须节流（2026-10-29 真机实测）：
+
+            连续上传 5 个文件 → 第 5 个开始报
+            "获取设备凭据失败（可重试）: 设备返回缺少 chain/encrypted
+             （data 字段: 空）"
+            停 20 秒再试 → 又正常
+
+        也就是**设备/云侧对 startService 换票有频率限制**。而上传流程原本每次
+        都无条件 ``async_refresh_credentials()``，于是面板「一次选多张照片」
+        必然从第 5 张起失败 —— 用户看到的是"传几张就断，说不清为什么"。
+
+        数据通道的 token 确实短命（几十秒），所以不能完全不刷新；折中是按
+        ``max_age``（默认 45s，小于 token 寿命）刷新一次，突发上传只换一次票。
+
+        刷新被限流时不直接把失败抛给用户：旧凭据通常还能用一小会儿，
+        真有 401 会在真正请求时暴露，比"第 5 张莫名失败"更好定位。
+        """
+        if self._creds is None or (
+            _time.monotonic() - self._creds_at
+        ) > max_age:
+            try:
+                await self.async_refresh_credentials()
+            except HuaweiDeviceError:
+                if self._creds is None:
+                    raise
+                # 限流/瞬时故障：沿用旧凭据继续（见上面说明）
+        assert self._creds is not None
+        return self._creds
+
+    def _control_base(self) -> str:
+        if self._control_url:
+            return self._control_url
+        return f"https://{self.host}:{self._control_port}"
+
+    def _data_base(self) -> str:
+        if self._data_url:
+            return self._data_url
+        return f"https://{self.host}:{self._data_port}"
+
+    def _control_headers(self) -> dict[str, str]:
+        assert self._creds is not None
+        return {
+            "User-Agent": DEVICE_UA,
+            "Accept": "*/*",
+            "Token": self._creds.token,
+            "Cookie": f"ID={self._creds.session}",
+        }
+
+    def _data_headers(self) -> dict[str, str]:
+        assert self._creds is not None
+        token = self._creds.data_token or self._creds.token
+        session = self._creds.data_session or self._creds.session
+        return {
+            "User-Agent": DATA_UA,
+            "Accept": "*/*",
+            "Token": token,
+            "Cookie": f"ID={session}",
+        }
+
+    @staticmethod
+    def _common_params(device_id: str) -> dict[str, str]:
+        return {"clientType": str(DEVICE_CLIENT_TYPE), "deviceId": device_id}
+
+    # ------------------------------------------------------------------
+    # 低层请求
+    # ------------------------------------------------------------------
+    async def _request(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        method: str = "GET",
+        json_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        retry_auth: bool = True,
+    ) -> Any:
+        creds = await self.async_ensure_credentials()
+        merged = {**self._common_params(creds.cloud_dev_id), **(params or {})}
+        url = f"{self._control_base()}{path}"
+        headers = {**self._control_headers(), **(extra_headers or {})}
+        try:
+            async with self._session.request(
+                method,
+                url,
+                params=merged,
+                headers=headers,
+                json=json_body,
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+            ) as resp:
+                status = resp.status
+                text = await resp.text()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            # 连接不上 = 隧道端口已被设备回收（设备按 client 会话分配端口，
+            # 端口不固定；PC 客户端或设备重启后旧端口即失效）。
+            # 此时必须重新 startService 拿新隧道，重试一次。
+            if retry_auth and _is_connect_error(err):
+                _LOGGER.debug("%s 连接失败（隧道可能已失效），重取凭据后重试: %s", path, err)
+                await self.async_refresh_credentials()
+                return await self._request(
+                    path,
+                    params,
+                    method=method,
+                    json_body=json_body,
+                    extra_headers=extra_headers,
+                    retry_auth=False,
+                )
+            raise HuaweiDeviceError(f"请求 {path} 失败: {err}") from err
+
+        if status == 401:
+            if retry_auth:
+                await self.async_refresh_credentials()
+                return await self._request(
+                    path,
+                    params,
+                    method=method,
+                    json_body=json_body,
+                    extra_headers=extra_headers,
+                    retry_auth=False,
+                )
+            raise HuaweiDeviceAuthError(f"{path} 拒绝会话凭据 (401)")
+        if status != 200:
+            raise HuaweiDeviceError(f"{path} 返回 HTTP {status}")
+
+        try:
+            payload = json.loads(text)
+        except ValueError as err:
+            raise HuaweiDeviceError(f"{path} 返回非 JSON") from err
+
+        # 业务错误码：设备对不同服务用不同字段（code / errorCode），
+        # 非 0 表示该服务拒绝或不可用。**必须显式抛出**，否则上层会把
+        # 「设备返回错误」当成「数据为空」，故障被静默吞掉。
+        #
+        # 其中 16106 / 12009 是**会话失效**的表现（不是相册服务故障）：
+        # 设备按 client 标识维持会话，同一标识被别的客户端 startService 顶掉后，
+        # 旧会话调业务接口就会拿到这两个码。此时应重取凭据再试一次。
+        if isinstance(payload, dict):
+            for field in ("code", "errorCode"):
+                if field in payload:
+                    value = payload.get(field)
+                    if value not in (0, "0", None):
+                        if _is_stale_session_code(value) and retry_auth:
+                            _LOGGER.debug(
+                                "%s 返回 %s（会话失效），重取凭据后重试", path, value
+                            )
+                            await self.async_refresh_credentials()
+                            return await self._request(
+                                path,
+                                params,
+                                method=method,
+                                json_body=json_body,
+                                extra_headers=extra_headers,
+                                retry_auth=False,
+                            )
+                        raise HuaweiDeviceError(
+                            f"{path} 返回错误 {field}={value}"
+                            f"（{str(payload.get('error_desc') or payload.get('errorMsg') or '')[:80]}）"
+                        )
+                    break
+        return payload
+
+    # ------------------------------------------------------------------
+    # 高层：相册 / 照片
+    # ------------------------------------------------------------------
+    async def async_heartbeat(self) -> bool:
+        data = await self._request(API_HEARTBEAT)
+        return data.get("code", 0) == 0
+
+    async def async_get_album_list(self, album_type: int = 0) -> list[dict[str, Any]]:
+        """``albumType=0`` 返回全部相册（含系统/人脸/地点/场景/最近删除）。
+
+        ⚠️ **不含 type=6**（用户/共享相册），要单独取一次 ``album_type=6``。
+        """
+        data = await self._request(API_ALBUM_LIST, {"albumType": album_type})
+        return data.get("albumlist") or []
+
+    async def async_get_album_cfg(
+        self, album_id: int, album_type: int = ALBUM_TYPE_USER
+    ) -> dict[str, Any]:
+        """单个相册的元数据 + **封面原图路径**（``/gallery/albumCfg``）。
+
+        **GET** 读；**POST 写**（重命名 / 改封面，见 :meth:`async_modify_album`）。
+
+        ⚠️ 早前记的"POST 会返回 30102"是**报文不全**导致的（只发了 albumId），
+        不是这个端点不支持 POST —— 2026-10-30 抓到官方客户端的 POST 报文后
+        才弄清：同一个 URL，GET 读、POST 改。
+
+        参数走 query：``?albumId=&albumType=``（抓包实据 + 206 实测 2026-10-09）。
+
+        返回 ``data`` 含 ``albumName`` / ``albumType`` 与 ``coverInfo[]``，
+        每项有 ``hdcFilePath``（原图）、``lcdFilePath``（大图）、``coverId``。
+        **这正是拿单个相册封面原图的途径** —— 相册列表里的 ``coverInfo``
+        可能为空，此时用它兜底。
+        """
+        data = await self._request(
+            API_ALBUM_CFG, {"albumId": int(album_id), "albumType": int(album_type)}
+        )
+        return data.get("data") or {}
+
+    async def async_modify_album(
+        self,
+        album_id: int,
+        album_name: str | None = None,
+        album_type: int = ALBUM_TYPE_USER,
+        cover_id: int | None = None,
+        to_share_album: int = 0,
+    ) -> dict[str, Any]:
+        """**修改相册属性**（``POST /gallery/albumCfg``）—— 重命名 / 设封面。
+
+        同一个 URL：GET 读属性，POST 改属性。两件事的 body **不一样**，
+        这点是踩过坑的（2026-10-30）：
+
+        **改名**（抓包实据，官方 PC 客户端「234」→「345234」）::
+
+            {"albumId":29,"albumName":"相册A","albumType":6,"clientType":3,
+             "deviceId":"...","modifyTime":0,"toShareAlbum":0}
+
+        **设封面**（抓包实据，同客户端「设为封面」）::
+
+            {"albumId":29,"albumType":6,"clientType":3,
+             "coverId":281474976736133,
+             "deviceId":"...","modifyTime":0,"toShareAlbum":0}
+
+        ⚠️ 两个关键差异，缺一不可：
+        * 改名带 ``albumName`` **不带** ``coverId``；设封面带 ``coverId``
+          **不带** ``albumName``
+        * 之前把两者混在一起（同时传 albumName + coverId）→ 设备返回
+          ``30111``，看着像"字段名错"，其实是**多送了字段**
+
+        ``modifyTime`` 抓包原值恒为 **0**（不是时间戳），设备只做存在性校验。
+        返回 ``code 0 / des suc`` 即成功，用 ``getAlbumList`` 回查可复核。
+        """
+        creds = await self.async_ensure_credentials()
+        body: dict[str, Any] = {
+            "albumId": int(album_id),
+            "albumType": int(album_type),
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": creds.cloud_dev_id,
+            "modifyTime": 0,
+            "toShareAlbum": int(to_share_album),
+        }
+        if album_name:
+            body["albumName"] = album_name
+        if cover_id is not None:
+            body["coverId"] = int(cover_id)
+        return await self._request(
+            API_ALBUM_CFG, method="POST", json_body=body
+        )
+
+    async def async_add_album(
+        self,
+        name: str,
+        album_type: int = 0,
+        parent_id: int = 0,
+    ) -> dict[str, Any]:
+        """创建相册（``/gallery/addAlbum``）。
+
+        ✅ **真机实测通过**（2026-10-29，AS6020）：
+        ``add_album(name="_验证_tmp_20261029b", album_type=6)``
+        → ``{"ok":true,"result":{"albumId":17,"code":0,"des":"suc"}}``。
+
+        修复前固定 ``30102``，试过 4 种参数组合（album_type 0/6 × 两个名字）
+        全部失败 —— 不是参数值问题，是**报文结构**问题。定位方法是拿
+        「同域能成功的接口」逐字段对比：
+
+            /gallery/addAlbum                 body 无 clientType/deviceId → 30102
+            /gallery/modifyAlbumsHiddenStatus body 无 clientType/deviceId → 30102
+            /gallery/addAlbumMemb             body 有 clientType/deviceId → code 0 ✓
+
+        ``_request`` 只把 ``clientType``/``deviceId`` 放进 **query**，而相册域的
+        **写**接口还要在 **body** 里再看到一遍。补进 body 后立刻成功。
+
+        💡 ``30102`` 不是"某一种错误"，而是"报文缺东西"的通用信号：补一个
+        字段错误码就往前走一步（对照 ``async_del_album`` 的 30102→30100→0）。
+        遇到它先对比同域成功接口的 body，比抓包快得多。
+        """
+        creds = await self.async_ensure_credentials()
+        body = {
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": creds.cloud_dev_id,
+            "albumName": name,
+            "albumType": album_type,
+            "parentAlbumId": parent_id,
+            # 相册创建时间：真实 Unix 毫秒。不能用事件循环的单调时钟
+            # （那只有 ~1e7 量级，等于告诉设备"1970 年建的相册"）。
+            "addTime": int(_time.time() * 1000),
+        }
+        return await self._request(API_ALBUM_ADD, method="POST", json_body=body)
+
+    async def async_del_album(
+        self,
+        album_id: int,
+        album_type: int = ALBUM_TYPE_USER,
+    ) -> dict[str, Any]:
+        """删除相册（``/gallery/delAlbum``）。**不可逆**。
+
+        ✅ **真机实测通过**（2026-10-29，AS6020）：``{"code":0,"des":"suc"}``，
+        删除后相册列表随即少一项。
+
+        这个接口花了三步试对，错误码一路在变，正好标出缺的是什么：
+
+            原始 body {albumId, albumType}        → 30102
+            + clientType + deviceId               → 30100
+            + albumName                           → code 0 ✓
+
+        所以相册域写接口的要求是「公共字段 + 该接口的业务字段」；
+        ``albumName`` 这里按 albumId 反查（与 ``addAlbumMemb`` 一致）。
+        """
+        creds = await self.async_ensure_credentials()
+        album_name = await self._album_name_by_id(int(album_id))
+        body = {
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": creds.cloud_dev_id,
+            "albumId": int(album_id),
+            "albumType": int(album_type),
+            "albumName": album_name,
+        }
+        return await self._request(API_ALBUM_DEL, method="POST", json_body=body)
+
+    async def async_album_search(
+        self,
+        keyword: str,
+        album_type: int = 0,
+        num: int = 20,
+        page: int = 0,
+    ) -> dict[str, Any]:
+        """相册内照片搜索（``/gallery/search``）。
+
+        ⚠️ **逆向推断**：query ``?keyword=&albumType=&num=&page=``，
+        GET 形态；未实机验证。
+        """
+        return await self._request(
+            API_ALBUM_SEARCH,
+            {
+                "keyword": keyword,
+                "albumType": album_type,
+                "num": num,
+                "page": page,
+            },
+            method="GET",
+        )
+
+    async def async_modify_file_attr(
+        self,
+        file_ids: list[int],
+        new_name: str | None = None,
+    ) -> dict[str, Any]:
+        """修改照片属性（``/gallery/modifyFileAttr``）。
+
+        典型用途：**重命名单张/多张照片**。
+
+        ⚠️ **逆向推断**：body 形如
+        ``{"fileId": [123, 456], "fileAttr": {"newName": "..."}}``，
+        未实机验证。
+        """
+        body: dict[str, Any] = {"fileId": [int(i) for i in file_ids]}
+        if new_name:
+            body["fileAttr"] = {"newName": new_name}
+        return await self._request(
+            API_GALLERY_MODIFY_ATTR, method="POST", json_body=body
+        )
+
+    async def async_del_album_memb(
+        self,
+        album_id: int,
+        album_type: int,
+        file_ids: list[int | str],
+        album_name: str = "",
+    ) -> dict[str, Any]:
+        """把照片**移出相册**（``/gallery/delAlbumMemb``，**POST**）。
+
+        对称于 :meth:`async_add_album_members`，但报文要求更严：
+
+            只给 {albumId, albumType, membs}      → 30110（实测 2026-10-30）
+            + clientType / deviceId / albumName   → 待验证
+
+        ``30110`` 在相册域同样是「报文缺东西」的信号（与 ``30102`` 同类，
+        只是码不同）。修法沿用 ``addAlbumMemb`` / ``delAlbum`` 的结论：
+        **公共字段（clientType、deviceId）必须同时出现在 body 里**，
+        业务字段 ``albumName`` 也必填（``delAlbum`` 缺它 30100→补上才 0）。
+
+        注意语义：这是**解除照片与相册的关联**，不删原图 —— 照片仍在
+        「照片」总相册 / 文件空间里。
+        """
+        creds = await self.async_ensure_credentials()
+        if not album_name:
+            album_name = await self._album_name_by_id(int(album_id))
+        body: dict[str, Any] = {
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": creds.cloud_dev_id,
+            "albumId": int(album_id),
+            "albumName": album_name,
+            "albumType": int(album_type),
+            "membs": [{"fileId": int(i)} for i in file_ids],
+            "addTime": int(_time.time() * 1000),
+        }
+        return await self._request(
+            API_ALBUM_DEL_MEMB, method="POST", json_body=body
+        )
+
+    async def async_get_album_membs_info(
+        self,
+        album_id: int,
+        album_type: int,
+        pre_id: int = 0,
+        num: int = 500,
+    ) -> dict[str, Any]:
+        """相册成员详情（``/gallery/getAlbumMembsInfo``，**GET**）。
+
+        非增量的全量拉取，比 ``albumMembIncInfo`` 完整。⚠️ 逆向推断，未实机验证。
+        """
+        return await self._request(
+            API_ALBUM_MEM_INFO,
+            {"albumId": int(album_id), "albumType": int(album_type),
+             "preId": int(pre_id), "num": int(num)},
+        )
+
+    async def async_get_all_album_list(self) -> list[dict[str, Any]]:
+        """全部相册列表（``/gallery/getAllAlbumList``，**GET**）。
+
+        含隐藏相册 / 系统相册 / 推荐相册，比 ``getAlbumList`` 全。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        data = await self._request(API_ALL_ALBUM_LIST)
+        d = data.get("data") if isinstance(data, dict) else None
+        return d if isinstance(d, list) else []
+
+    async def async_hide_albums(
+        self,
+        album_ids: list[int],
+        album_type: int,
+        hidden: bool = True,
+    ) -> dict[str, Any]:
+        """隐藏/显示相册（``/gallery/modifyAlbumsHiddenStatus``，**POST**）。
+
+        ``hidden=True`` 隐藏，``False`` 显示。
+
+        ⚠️ **本机实测是「假成功」**（2026-10-30 复核）：报文返回 ``code 0``，
+        但回查 ``getAlbumList`` 的 ``hiddenStatus`` 始终是 0、``albumCfg`` 也没
+        任何变化。此前 CHANGELOG 记的"10-29 隐藏与恢复都生效"是**只看返回值
+        得出的结论**，不成立 —— 又是 ``code 0 ≠ 成功`` 的老套路。
+
+        所以面板**没有暴露这个入口**（服务保留给排查/其它固件用）。
+        要重新启用，先找到能证明它生效的回查路径：要么列表里相册消失，
+        要么 ``hiddenStatus`` 变 1，二者取一。
+
+        历史修复经过（报文层面是对的）：
+
+            原始 {albumIds, albumType, hidden}       → 30102
+            + clientType + deviceId                  → 仍 30102
+            **hidden → hiddenStatus（1/0 整数）**     → code 0（但无效果）
+
+        关键：**字段名要与设备自己返回的结构一致**。设备返回的相册对象里字段
+        就叫 ``hiddenStatus``、值是 ``0/1``；我们请求里写的是 ``hidden`` 布尔。
+        名字对不上，设备就当"必填字段没给"，直接 30102 —— 而它的错误响应
+        只有 ``{"code":30102}``，一个字都不多，无从反推。
+
+        所以逆向写接口最省力的做法不是抓包，而是**先读设备返回的同一对象
+        长什么样，照抄字段名**。
+        """
+        creds = await self.async_ensure_credentials()
+        body: dict[str, Any] = {
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": creds.cloud_dev_id,
+            "albumIds": [int(i) for i in album_ids],
+            "albumType": int(album_type),
+            "hiddenStatus": 1 if hidden else 0,
+        }
+        return await self._request(
+            API_HIDE_ALBUMS, method="POST", json_body=body
+        )
+
+    async def async_merge_face_albums(
+        self,
+        target_id: int,
+        source_ids: list[int],
+    ) -> dict[str, Any]:
+        """合并人脸相册（``/gallery/mergeFaceAlbums``，**POST**）。
+
+        把多个人脸相册合并到 ``target_id``。⚠️ 逆向推断，未实机验证。
+        """
+        body: dict[str, Any] = {
+            "targetAlbumId": int(target_id),
+            "sourceAlbumIds": [int(i) for i in source_ids],
+        }
+        return await self._request(
+            API_MERGE_FACE_ALBUM, method="POST", json_body=body
+        )
+
+    async def async_add_album_members_async(
+        self,
+        album_id: int,
+        album_type: int,
+        file_ids: list[int | str],
+    ) -> dict[str, Any]:
+        """异步添加相册成员（``/gallery/addAlbumMembAsync``，**POST**）。
+
+        大相册（几百张以上）推荐用这个，返回 ``taskId`` 后用
+        :meth:`async_add_album_members_task_query` 查进度。⚠️ 逆向推断，未实机验证。
+        """
+        body: dict[str, Any] = {
+            "albumId": int(album_id),
+            "albumType": int(album_type),
+            "membs": [{"fileId": int(i)} for i in file_ids],
+        }
+        return await self._request(
+            API_ALBUM_ADD_MEMB_ASYNC, method="POST", json_body=body
+        )
+
+    async def async_add_album_members_task_query(
+        self, task_id: str
+    ) -> dict[str, Any]:
+        """异步加成员任务进度查询（``/gallery/taskStatus``，**GET**）。
+
+        ``task_id`` 来自 :meth:`async_add_album_members_async` 的响应。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        return await self._request(
+            API_ALBUM_ADD_MEMB_TASK_QUERY, {"taskId": task_id}
+        )
+
+    async def async_share_to_person(
+        self,
+        file_ids: list[int | str],
+        receiver_user_ids: list[str],
+        auto_expire_days: int = 0,
+    ) -> dict[str, Any]:
+        """同步式分享给个人（``/gallery/shareToPerson``，**POST**）。
+
+        与 :meth:`async_add_share_to_person`（异步版）的区别：同步阻塞直到完成。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        creds = await self.async_ensure_credentials()
+        body: dict[str, Any] = {
+            "fileIds": [int(i) for i in file_ids],
+            "receiverUserIds": receiver_user_ids,
+            "autoExpireDays": int(auto_expire_days),
+            "senderUserId": creds.cloud_dev_id,
+        }
+        return await self._request(
+            API_SHARE_TO_PERSON, method="POST", json_body=body
+        )
+
+    async def async_share_to_person_status(
+        self, task_id: str
+    ) -> dict[str, Any]:
+        """查询分享任务状态（``/gallery/shareToPersonStatus``，**GET**）。
+
+        ``task_id`` 来自 :meth:`async_share_to_person` 或 App 的分享。
+        ⚠️ 逆向推断，未实机验证。
+        """
+        return await self._request(
+            API_SHARE_TO_PERSON_STATUS, {"taskId": task_id}
+        )
+
+    async def async_get_album_inc(
+        self, pre_id: int = 0, num: int = 500
+    ) -> list[dict[str, Any]]:
+        """相册增量表（``/gallery/albumIncInfo``，**GET**）。
+
+        返回 ``[{albumId, albumType, optType, optTime}]``，用于发现「哪些相册
+        有变动」。POST 形态不可用（code 1）。
+        """
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            API_ALBUM_INC,
+            {"clientType": DEVICE_CLIENT_TYPE, "deviceId": creds.cloud_dev_id,
+             "num": int(num), "preId": int(pre_id)},
+        )
+        d = data.get("data")
+        return d if isinstance(d, list) else []
+
+    async def async_get_album_members_inc(
+        self, album_type: int, pre_id: int = 0, num: int = 500
+    ) -> dict[str, Any]:
+        """相册成员增量表（``/gallery/albumMembIncInfo``，**GET**）。
+
+        返回 ``{data: [...], lastId, galleryDbVersion}``。⚠️ 这是**增量同步**
+        接口（给客户端同步本地库用）：**没有路径**、列不全照片，
+        **不要拿它列相册内容**（实测翻 8 页只累积 18 条）。
+        POST 形态返回 ``code 1``。
+        """
+        data = await self._request(
+            API_ALBUM_MEMBERS,
+            {"albumType": int(album_type), "preId": int(pre_id), "num": int(num)},
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def _resolve_file_names(
+        self, file_ids: list[int] | list[str], known: list[str]
+    ) -> list[str]:
+        """为 ``addShareToPerson`` 补全文件名（该端点要求 ``fileName`` 非空）。
+
+        优先用已有的；没有就查 :meth:`async_get_photos_info`，取 ``fileSrcPath``
+        的最后一段（退到 ``hdcFilePath``）；都没有则用 ``<fileId>.jpg`` 占位。
+        """
+        out: list[str] = []
+        try:
+            metas = await self.async_get_photos_info(file_ids)
+        except Exception:  # noqa: BLE001
+            metas = []
+        by_id = {}
+        for m in metas or []:
+            try:
+                by_id[int(m.get("fileId"))] = m
+            except (TypeError, ValueError):
+                continue
+        for i, f in enumerate(file_ids):
+            if i < len(known) and known[i]:
+                out.append(str(known[i]))
+                continue
+            try:
+                fid = int(f)
+            except (TypeError, ValueError):
+                out.append(str(f))
+                continue
+            meta = by_id.get(fid) or {}
+            src = str(meta.get("fileSrcPath") or meta.get("hdcFilePath") or "")
+            name = src.rsplit("/", 1)[-1] if src else ""
+            out.append(name or f"{fid}.jpg")
+        return out
+
+    async def async_add_share_to_person(
+        self,
+        album_id: int,
+        file_ids: list[int] | list[str],
+        owner_id: int,
+        album_name: str = "",
+        album_type: int = ALBUM_TYPE_USER,
+        file_names: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """把照片共享到**人物相册**（``/gallery/addShareToPerson``，实测 ``code 0``）。
+
+        抓包实据（2026-10-09）::
+
+            POST /gallery/addShareToPerson
+            {"addTime":1791412246000,"albumId":14,"albumName":"...","albumType":6,
+             "clientType":3,"deviceId":"...",
+             "fileIds":[{"fileId":281474976755919,
+                         "fileName":"xxx.png","ownerId":10001}],
+             "subTaskId":1,"transId":"291643247819"}
+            -> {"code":0,"des":"suc","taskId":0}
+
+        与 :meth:`async_add_album_members` 的区别：那个用 ``membs:[{fileId}]``
+        加到普通相册；这个用 ``fileIds:[{fileId,fileName,ownerId}]`` 共享到
+        人物（``ownerId`` 是设备用户 id，从 :meth:`async_get_device_users` 取）。
+
+        ⚠️ **``fileName`` 也是必填**（实测 2026-10-09：不传/空串会返回 ``30102``）。
+        未提供 ``file_names`` 时本方法会自动补全（见 :meth:`_resolve_file_names`）。
+        """
+        creds = await self.async_ensure_credentials()
+        import time as _time      # 与 async_upload_file 一致：模块级未 import time
+
+        names = list(file_names or [])
+        if not names or any(not n for n in names[: len(file_ids)]):
+            names = await self._resolve_file_names(file_ids, names)
+        # ⚠️ albumName 同样是必填（实测：不传返回 30102）→ 留空时按 albumId 反查
+        if not album_name:
+            album_name = await self._album_name_by_id(int(album_id))
+
+        return await self._request(
+            API_ADD_SHARE_TO_PERSON,
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "albumId": int(album_id),
+                "albumName": album_name,
+                "albumType": int(album_type),
+                "addTime": int(_time.time() * 1000),
+                "fileIds": [
+                    {"fileId": int(f),
+                     "fileName": names[i] if i < len(names) else "",
+                     "ownerId": int(owner_id)}
+                    for i, f in enumerate(file_ids)
+                ],
+                "subTaskId": 1,
+                "transId": str(random.randint(10**11, 10**12 - 1)),
+            },
+        )
+
+    async def async_upload_file(
+        self,
+        dest_path: str,
+        payload: bytes,
+        device_id: str,
+        category: str = "public",
+        src_path: str = "",
+        view_path: str = "",
+        mtime_ms: int | None = None,
+    ) -> dict[str, Any]:
+        """上传文件到设备（**端到端打通**，2026-10-08 实测落盘）。
+
+        两段式，全部照抓包报文复现（外网/局域网一致）::
+
+            ① POST /filesvc/prepareUpload?category=public
+               {"deviceId":..,"uploadType":1,"files":[{viewPath,srcPath,
+                 path,sessionId:"",fileId:0,fileSize,orientation:0,taskId:0}]}
+               → {fileList:[{fileId, sessionId, offset, path, ...}]}
+
+            ② POST <数据通道>/upload?<17 个 query 参数>
+               头: Content-Disposition / Content-Type / Dest-File /
+                   X-Session-ID / Expect: 100-continue（**必需**，缺则 500）
+               body: 文件原始字节
+
+        ⚠️ 关键点（缺一个就 500/52015）：
+        * query 必须带 **mediaType/mtime/orientation/service/size/
+          sourceAlbum/srcPath/takenTime/uploadType/usb/viewPath** ——
+          抓包里共 17 个参数，缺一个就 500（openresty 层拒绝）
+        * **``Expect: 100-continue`` 必需**（实测去掉 → 500）
+        * ``service=filesvc`` 也要在 query 里（prepare 不用，upload 要）
+        * ``Dest-File`` / ``Content-Disposition`` 的文件名用**全字节百分号编码**
+        * 成功返回 ``{"code":0,"data":{"path":"/file/test/xxx"}}``
+        """
+        import time as _time
+        import urllib.parse as _up
+
+        # ⚠️ 上传前要保证凭据够新（2026-10-28 实测：startService 下发的
+        # dataToken/dataSession 生命周期只有几十秒，控制通道容忍旧 token、
+        # 数据通道不行 → 401）。
+        # 但**不能每次都强刷**（2026-10-29 实测：连刷 4~5 次后设备开始返回空
+        # data，多选上传从第 5 张起必失败）。用节流版：45s 内只换一次票。
+        await self.async_ensure_fresh_credentials()
+        durl = self._data_base()
+        dh = self._data_headers()
+        fname = dest_path.rstrip("/").rsplit("/", 1)[-1]
+        now = mtime_ms or int(_time.time() * 1000)
+
+        # ⚠️ mediaType 决定设备把文件登记成"照片"还是"普通文件"（2026-10-29 实测）：
+        # 恒传 "0" 时，上传能成功，但**相册收不进去** —— ``copy_to_album`` 返回
+        # code 0、传输任务 100%，目标相册却一张不多（同名的老照片则能进）。
+        # 也就是说：文件落盘了，但在设备眼里不是媒体，gallery 域拒绝收录。
+        # 值语义由实测收敛：图片 → "1"。
+        import mimetypes as _mt0
+        _mime, _ = _mt0.guess_type(fname.replace("#", ""))
+        media_type = "1" if (_mime or "").startswith("image/") else "0"
+        src = src_path or f"/win/C/tmp/{fname}"
+        view = view_path or f"Pictures/MemoSpace/{fname}"
+
+        # ① prepareUpload
+        #
+        # ⚠️ 这里曾按插件反编译记录写成 ``dataList`` + ``hash``(MD5) + ``fileVer``，
+        # 注释还断言"固件升级后只认新结构，旧形状会返回 fileId=0"。**这是错的**：
+        # 真机固定回 ``code=1101``（换文件名/路径/目录/分类都一样），而
+        # ``_frida/capture_all.jsonl:3303`` 里 PC 客户端的真实请求用的是
+        # ``files``、且**没有 hash 字段**。照抓包改回来才通。
+        #
+        # 教训：「反编译推断」的优先级低于「真实抓包」。反编译能看出类结构，
+        # 但看不出运行时到底序列化了哪些字段 —— 而设备校验的是后者。
+        prep = await self._request(
+            API_PREPARE_UPLOAD,
+            method="POST",
+            params={"category": category},
+            # 📌 报文严格照抄抓包（``_frida/capture_all.jsonl:3303``，PC 客户端
+            # Windows App/3.0.3.386 的真实请求）：
+            #
+            #   POST /filesvc/prepareUpload?category=public
+            #   {"deviceId":"...","uploadType":1,
+            #    "files":[{"viewPath":..,"srcPath":..,"path":"/file/test/xx.png",
+            #              "sessionId":"","fileId":0,"fileSize":63495,
+            #              "orientation":0,"taskId":200}]}
+            #   → {"code":0,"data":{"fileList":[{"fileId":288230376151718449,
+            #        "sessionId":"...","offset":0,"status":0,"taskId":200}]}}
+            #
+            # ⚠️ 两个曾把人带进沟里的错误（2026-10-29 均已在真机复现）：
+            #
+            # 1. **不是 ``dataList``，是 ``files``**。曾据插件反编译记录改成
+            #    ``dataList`` + ``hash``(MD5) + ``fileVer``，结果设备固定回
+            #    ``code=1101``（无论文件名/路径/目录/分类怎么换）—— 因为形状不对。
+            #    抓包才是准的：filesvc 用 ``files``，且**没有 hash 字段**。
+            # 2. **不需要 clientType**（相册域的 addAlbum/delAlbum 才需要；
+            #    文件域这里带上反而多一个未知字段）。
+            json_body={"deviceId": device_id, "uploadType": 1,
+                       "files": [{"viewPath": view, "srcPath": src,
+                                  "path": dest_path, "sessionId": "",
+                                  "fileId": 0, "fileSize": len(payload),
+                                  "orientation": 0, "taskId": 0}]},
+        )
+        items = (prep.get("data") or {}).get("fileList") or []
+        if not items:
+            raise HuaweiDeviceError(f"prepareUpload 无 fileList: {prep}")
+        fid = str(items[0].get("fileId"))
+        sid = str(items[0].get("sessionId"))
+
+        # ② POST /upload（数据通道，17 参数 + Expect: 100-continue）
+        q = {
+            "category": category, "clientType": str(DEVICE_CLIENT_TYPE),
+            "comment": "", "ctime": str(now), "deviceId": device_id,
+            "fileId": fid, "fileVer": "", "mediaType": media_type, "mtime": str(now),
+            "orientation": "0", "service": "filesvc", "size": str(len(payload)),
+            "sourceAlbum": "0", "srcPath": src, "takenTime": "0",
+            "uploadType": "1", "usb": "false", "viewPath": view,
+        }
+        # ⚠️ Content-Type 按文件扩展名猜（插件 UploadTask$FileUploadRequestBody.contentType()
+        # 用 URLConnection.getFileNameMap()，如 .png → image/png），猜不出才回退
+        # octet-stream。硬编码 octet-stream 会被 openresty 拒（415 Unsupported Media Type）。
+        import mimetypes as _mt
+        _ct = _mt.guess_type(fname.replace("#", ""))[0] or "application/octet-stream"
+        h = {**dh,
+             "Content-Disposition": f'attachment;filename="{_up.quote(fname)}"',
+             "Content-Type": _ct,
+             "Dest-File": encode_device_path(dest_path),
+             "X-Session-ID": sid}
+        # ⚠️ 不再发 ``Expect: 100-continue``（2026-10-28 实测）：现在的固件对带
+        # Expect 的 /upload 直接**关闭连接**（Remote end closed / Server
+        # disconnected）。旧文档「缺 Expect → 500」是 10-08 时代固件的行为，已过时。
+        # ⚠️ /upload 必须用 http.client（线程池）而不能用 aiohttp（2026-10-28 决定性实测）：
+        # 同一隧道、同一凭据、同一参数，http.client 能拿到设备真实响应（415/400/200），
+        # aiohttp 一律 Server disconnected / 401。逐一排除过 header/UA/Expect/Cookie
+        # jar/SSL 上下文 —— 是 aiohttp 与该 openresty 数据通道的兼容性问题。
+        # 上传本就是阻塞 IO，走线程池无损。
+        def _do_upload() -> tuple[int, str]:
+            import http.client as _hc
+            import ssl as _ssl
+            _u = _up.urlparse(durl)
+            _host = _u.hostname or self.host
+            _port = _u.port or 443
+            _path = "/upload?" + _up.urlencode(q)
+            _ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+            _ctx.check_hostname = False
+            _ctx.verify_mode = _ssl.CERT_NONE
+            _conn = _hc.HTTPSConnection(_host, _port, timeout=300, context=_ctx)
+            try:
+                _conn.request("POST", _path, body=payload, headers=h)
+                _r = _conn.getresponse()
+                return _r.status, _r.read().decode("utf-8", "replace")
+            finally:
+                try:
+                    _conn.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        _status, text = await asyncio.to_thread(_do_upload)
+
+        # ⚠️ 数据通道偶发 401（2026-10-29 实测）：连续上传时偶有一张回报
+        # ``/upload 非 JSON 响应: HTTP 401``。原因是 prepare 拿到 sessionId 之后、
+        # 真正上传之前，凭据可能被子系统（协调器轮询/并发上传）刷新过 ——
+        # 设备换了新隧道凭据，旧的 session 立刻失效。
+        # 处理：强制换票后**整条重做一次**（prepare 也要重做，sessionId 会变）。
+        # 只重试一次，避免掩盖真正的授权问题。
+        if _status in (401, 403) and not getattr(self, "_upload_retried", False):
+            self._upload_retried = True
+            try:
+                await self.async_refresh_credentials()
+                return await self.async_upload_file(
+                    dest_path, payload, device_id,
+                    category=category, src_path=src_path,
+                    view_path=view_path, mtime_ms=mtime_ms,
+                )
+            finally:
+                self._upload_retried = False
+
+        try:
+            j = json.loads(text)
+        except ValueError:
+            raise HuaweiDeviceError(f"/upload 非 JSON 响应: HTTP {_status} {text[:120]}")
+        # 成功：{"code":0,"data":{"path":...}}。注意 code 可能是 str/int。
+        if str(j.get("code")) != "0":
+            raise HuaweiDeviceError(f"/upload 失败: {text[:200]}")
+        # ⚠️ prepareUpload 返回的 fileId 是**文件域**的（``288…``），不是相册域
+        # 的（``281…``，见 album_photos 的 fileId）。照这个错误结论拿它去调
+        # add_to_album 会被拒（30101）；进相册要走 copy_to_album（按路径跨域复制）。
+        if isinstance(j, dict):
+            j.setdefault("data", {})
+            if isinstance(j.get("data"), dict):
+                j["data"].setdefault("fileId", fid)
+            j.setdefault("fileId", fid)
+        return j
+
+    async def async_get_album_photos(
+        self,
+        album_id: int,
+        album_type: int,
+        device_id: str,
+        last_cre_time: int = 0,
+        last_row_id: int = 0,
+        num: int = ALBUM_PAGE_SIZE,
+    ) -> dict[str, Any]:
+        """取相册内的照片（``/gallery/getAlbumInfo``）——**列全部照片的正解**。
+
+        抓包实据（出现 1220 次，客户端浏览相册照片的主接口）::
+
+            GET /gallery/getAlbumInfo
+                ?albumId=16&albumType=6&clientType=3&dataType=1
+                &deviceId=<devId>&lastCreTime=0&lastRowId=0&num=500
+
+        ⚠️ 「所有照片」(albumId=1) 传它的 albumType=1 会 ``30109``，
+        实测改用 ``albumType=2`` 才有数据——本方法已内置该回退。
+        """
+        req = {
+            "albumId": album_id,
+            "albumType": album_type,
+            "clientType": DEVICE_CLIENT_TYPE,
+            "dataType": 1,
+            "deviceId": device_id,
+            "lastCreTime": last_cre_time,
+            "lastRowId": last_row_id,
+            "num": num,
+        }
+        try:
+            data = await self._request(API_ALBUM_INFO, req)
+        except HuaweiDeviceError as err:
+            # 「所有照片」等特殊相册：albumType=1 → 30109，改用 2 重试。
+            # _request 对非 0 code 直接抛异常，所以在这里捕获判断。
+            if "30109" not in str(err):
+                raise
+            data = await self._request(
+                API_ALBUM_INFO, {**req, "albumType": 2}
+            )
+        photos = data.get("data") or []
+        if not isinstance(photos, list):
+            photos = []
+        next_cre, next_row = last_cre_time, last_row_id
+        if photos:
+            ts = [int(p.get("createTime") or 0) for p in photos]
+            mx = max(ts) if ts else 0
+            if mx:
+                next_cre = mx
+            rid = [int(p.get("rowId") or 0) for p in photos]
+            mrow = max(rid) if rid else 0
+            if mrow:
+                next_row = mrow
+        return {"photos": photos, "lastCreTime": next_cre, "lastRowId": next_row}
+
+    async def async_get_dynamic_info(
+        self,
+        owner_id: int = 0,
+        data_type: int = 0,
+        album_id: int = 0,
+        album_type: int = 0,
+        add_time: int = 0,
+        dynamic_num: int = 20,
+        pic_num: int = 9,
+    ) -> dict[str, Any]:
+        """动态 / 时光轴 / 回忆（``GET /gallery/getDynamicInfo``）。
+
+        **完整** QueryMap 键取自插件 ``AlbumApi.l(Param, Callback)``，共 9 个：
+
+            clientType, albumId, albumType, albumDynamicNum,
+            albumPicNum, addTime, ownerId, dataType, deviceId
+
+        默认值对齐 ``AlbumDynamicPresenter`` 里的设置：
+        ``setAlbumDynamicNum(20)`` / ``setAlbumPicNum(9)``。
+        ``clientType`` 与 ``deviceId`` 由 ``_common_params`` 自动补。
+
+        ⚠️ 实测（2026-10-28）：只带 ownerId/dataType/deviceId 三个键时，
+        任何 dataType 都返回 ``code=30101``（大概率是缺必填项），
+        所以这里把 9 个键全部带上。
+        """
+        req: dict[str, Any] = {
+            "albumId": int(album_id),
+            "albumType": int(album_type),
+            "albumDynamicNum": int(dynamic_num),
+            "albumPicNum": int(pic_num),
+            "addTime": int(add_time),
+            "ownerId": int(owner_id),
+            "dataType": int(data_type),
+        }
+        data = await self._request(API_DYNAMIC_INFO, req)
+        return data.get("data") if isinstance(data, dict) else data
+
+    async def async_get_photos_table(self, pre_row_id: int = 0) -> dict[str, Any]:
+        """照片增量表：``{deviceId, fileId, operation, rowId}``，固定 500 条/页。"""
+        return await self._request(API_PHOTOS_INC, {"preRowId": pre_row_id})
+
+    async def async_get_photos_table_full(
+        self, row_id: int = 0, num: int = PHOTO_PAGE_SIZE
+    ) -> dict[str, Any]:
+        """全量照片表（``/gallery/getFullPhotosInfoTable``，GET）。
+
+        与 :meth:`async_get_photos_table`（增量，``preRowId`` 游标）的区别：这里
+        是**从头拉全部**，用于面板首次加载或本地缓存重建 —— 2.5 万张照片逐张
+        ``album_photos`` 往返不现实，必须走这个表。
+
+        ⚠️ 参数名 ``rowId`` 是**逆向推断**（App 插件只确认端点存在，见
+        ``RequestUri$GalleryUri.FULL_LIST``；同族的 inc 版用 ``preRowId``，
+        但全量版语义上是「从 rowId 开始」，故不叫 pre*）。首次返回 500 条/页。
+        """
+        creds = await self.async_ensure_credentials()
+        # ⚠️ 端点存在但本机返回 30102（inc 版同族端点历史可用）。这是**推断未验证**
+        # 的端点：App 插件 RequestUri$GalleryUri.FULL_LIST 确认常量存在，但设备
+        # 侧似乎对该端点有额外要求（clientType/deviceId 都试过，仍 30102）。
+        # 不再盲试参数，如需实现请先抓包确认。
+        data = await self._request(API_PHOTOS_FULL, {"rowId": int(row_id)})
+        payload = data.get("data")
+        rows = payload if isinstance(payload, list) else (payload or {}).get("list") or []
+        return {
+            "photos": rows,
+            "lastRowId": max(
+                (int(r.get("rowId") or 0) for r in rows), default=int(row_id)
+            ),
+            "count": len(rows),
+        }
+
+    async def async_query_bin(
+        self, offset: int = 0, num: int = 100
+    ) -> list[dict[str, Any]]:
+        """回收站查询：返回**完整元数据**（含 assets/hdcFilePath/thumbFilePath）。"""
+        data = await self._request(
+            API_QUERY_BIN,
+            method="POST",
+            json_body={"offset": offset, "num": num},
+        )
+        return data.get("data") or []
+
+    # ------------------------------------------------------------------
+    # 高层：存储 / 系统
+    # ------------------------------------------------------------------
+    async def async_get_disk_info(self) -> dict[str, Any]:
+        return await self._request(API_DISK_CHANGE)
+
+    async def async_get_user_data(self) -> dict[str, Any]:
+        """账号级容量统计（单位 MB）。"""
+        return await self._request(API_USER_DATA)
+
+
+
+    async def async_get_online_state(self) -> dict[str, Any]:
+        """设备升级/固件状态。
+
+        实测返回（AS6020-02）：
+        ``{"SN": "SN-REDACTED", "Version": "6.1.0.7",
+           "UpdateState": 17, "CurrentUpgradeTime": "2026-09-10 04:24:59",
+           "IsSupportOnlineUpg": 4, ...}``
+        """
+        return await self._request(API_ONLINE_STATE)
+
+    async def async_get_device_info(self) -> dict[str, Any]:
+        """设备硬件/固件信息。
+
+        实测返回（AS6020-02）：
+        ``{"body": {"DeviceName": "AS6020-02", "CpuName": "realtek rtl1619b",
+           "CpuCores": 4, "Frequency": 1800000,
+           "SerialNumber": "SN-REDACTED", "SoftwareVersion": "6.1.0.7"},
+           "code": 0}``
+        注意payload在 ``body`` 下。
+        """
+        return await self._request(API_DEVICE_INFO)
+
+    async def async_get_device_status(self) -> dict[str, Any]:
+        """运行态指标（CPU 使用率 / 温度 / 内存）。
+
+        实测返回（AS6020-02）：
+        ``{"code": 0, "body": {"MemFree": 1417976, "MemTotal": 4000000,
+           "Cpuusage": 1, "Cputemp": 44}}``
+        注意 payload 在 ``body`` 下；CPU 使用率是百分比整数，温度单位摄氏度。
+        """
+        return await self._request(API_DEVICE_STATUS)
+
+    async def async_get_samba_public(self) -> dict[str, Any]:
+        """公共 Samba 共享状态。
+
+        实测：``{"Smb1Enable": true, "AnonymousEnable": true,
+        "Path": "Network_Share_Resource", "AudioShare": true, "version": "1"}``
+        """
+        return await self._request(API_SAMBA_PUBLIC)
+
+    async def async_get_samba_user(self) -> dict[str, Any]:
+        """用户 Samba 配置。
+
+        实测：``{"Enable": true, "AnonymousEnable": 1, "Path": "My_Document"}``
+        """
+        return await self._request(API_SAMBA_USER)
+
+    async def async_get_auto_upgrade(self) -> dict[str, Any]:
+        """自动升级配置。
+
+        实测：``{"Enable": true, "StartTime": "03:00", "EndTime": "05:00",
+        "LatestHotaTime": "2026-09-10 04:24:35"}``
+        """
+        return await self._request(API_AUTO_UPGRADE)
+
+    async def async_get_wan_info(self) -> dict[str, Any]:
+        """网络/WAN 信息（payload 在 ``body`` 下）。
+
+        实测含 ``IPv4Addr`` / ``IPv6Addr1`` / ``IPv6Gateway`` 等。
+        """
+        return await self._request(API_WAN_INFO)
+
+    async def async_get_operation_devices(self) -> dict[str, Any]:
+        """访问过设备的客户端列表。
+
+        实测：``{"operationDevice": [{"deviceId": "...",
+        "deviceName": "HUAWEI Pura 70 Ultra"}, ...]}``
+        """
+        return await self._request(API_OPERATION_DEVICE)
+
+    async def async_get_dev_err_code(self) -> dict[str, Any]:
+        """设备错误码。实测：``{"code": 0, "data": {"devErr": 0, "errorCode": 0}}``"""
+        return await self._request(API_DEV_ERR_CODE)
+
+    async def async_get_repair_mode(self) -> dict[str, Any]:
+        """维修模式。实测：``{"code": 0, "data": {"mode": 0}}``"""
+        return await self._request(API_REPAIR_MODE_CHECK)
+
+    async def async_get_recent_files(
+        self, offset: int = 0, limit: int = 20
+    ) -> dict[str, Any]:
+        """最近文件记录。
+
+        实测：``{"data": {"hasMore": true, "offset": 10, "records": [
+        {"name": "20131213212803739.JPG", "mime": "image/jpeg",
+         "mtime": 1386987493000, "action": 4, ...}]}}``
+        """
+        return await self._request(API_FILES_RECENT, {"offset": offset, "limit": limit})
+
+    async def async_get_all_files(
+        self, offset: int = 0, limit: int = 20
+    ) -> dict[str, Any]:
+        """全部文件视图。实测：``{"data": {"files": [], "hasMore": false}}``"""
+        return await self._request(API_FILES_ALL, {"offset": offset, "limit": limit})
+
+    async def async_get_installed_plugins(self) -> dict[str, Any]:
+        """已安装的设备插件。
+
+        实测：``{"code": 0, "data": {"hapInfos": [{"appId": "...",
+        "name": "...", "installTime": "2022-11-29 23:23:58", ...}]}}``
+        """
+        return await self._request(API_PLUGIN_INSTALLED)
+
+    async def async_get_plugin_market(self, decompress: bool = True) -> Any:
+        """应用市场里的可安装插件（``GET /acelite/market_infos``）。
+
+        ⚠️ 设备返回的 ``data.hapInfos`` 是 **base64 → zlib → JSON** 的压缩串
+        （2026-10-28 实测解出），解压后形如：
+
+            {"sign": "...", "allList": [
+                {"appId","pkgName","name","versionName","versionCode",
+                 "iconUrl","downloadUrl","size", ...}, ...]}
+
+        注意市场里的键是 ``iconUrl`` / ``downloadUrl``（小写 url），而
+        ``hap_add`` 的 ``PluginAddRequestBean`` 用 ``iconURL`` / ``downloadURL``
+        —— 安装方法里做了这层映射。
+
+        ``decompress=False`` 时返回原始未解压结构，便于排查。
+        """
+        data = await self._request(API_PLUGIN_MARKET)
+        payload = data.get("data") if isinstance(data, dict) else data
+        if not decompress:
+            return payload
+        payload = _decompress_plugin_payload(payload)
+        # 解压后是 {"hapInfos": {"sign": ..., "allList": [...]}}，
+        # 把 hapInfos 的内容提上来，调用方直接用 allList。
+        if isinstance(payload, dict):
+            inner = payload.get("hapInfos")
+            if isinstance(inner, dict):
+                return inner
+        return payload
+
+    async def async_get_plugin_all(self) -> Any:
+        """市场 + 已安装合并视图（``GET /acelite/all_infos``）。"""
+        data = await self._request(API_PLUGIN_ALL)
+        return data.get("data") if isinstance(data, dict) else data
+
+    async def async_get_plugin_xunlei(self) -> Any:
+        """迅雷插件信息（``GET /acelite/xunlei_infos``）。"""
+        data = await self._request(API_PLUGIN_XUNLEI)
+        return data.get("data") if isinstance(data, dict) else data
+
+    async def async_install_plugin(self, plugin: dict[str, Any]) -> dict[str, Any]:
+        """安装 / 下载一个插件（``POST /acelite/hap_add``）。
+
+        请求体裁剪自插件 ``PluginAddRequestBean``，8 个字段：
+
+            appId, name, pkgName, downloadURL, iconURL,
+            uiURL, versionCode(int), versionName
+
+        正常用法是把 ``async_get_plugin_market()`` 里的某一项原样传进来，
+        所以这里按字段名从 dict 取；缺 ``appId`` / ``pkgName`` 视为无效请求。
+        """
+        app_id = str(plugin.get("appId") or "").strip()
+        pkg_name = str(plugin.get("pkgName") or "").strip()
+        if not app_id or not pkg_name:
+            raise ValueError("安装插件需要 appId 与 pkgName")
+        body = {
+            "appId": app_id,
+            "name": str(plugin.get("name") or ""),
+            "pkgName": pkg_name,
+            "downloadURL": str(plugin.get("downloadURL") or ""),
+            "iconURL": str(plugin.get("iconURL") or ""),
+            "uiURL": str(plugin.get("uiURL") or ""),
+            "versionCode": int(plugin.get("versionCode") or 0),
+            "versionName": str(plugin.get("versionName") or ""),
+        }
+        data = await self._request(API_PLUGIN_ADD, method="POST", json_body=body)
+        return data if isinstance(data, dict) else {"data": data}
+
+    async def async_install_plugin_by_id(self, app_id: str) -> dict[str, Any]:
+        """按市场里的 ``appId`` 直接安装（自动补齐 hap_add 所需字段）。
+
+        市场列表里的字段名是 ``iconUrl``/``downloadUrl``，而
+        ``PluginAddRequestBean`` 是 ``iconURL``/``downloadURL``，
+        这里统一映射后调用 :meth:`async_install_plugin`。
+        """
+        wanted = str(app_id).strip()
+        market = await self.async_get_plugin_market()
+        items: list[dict[str, Any]] = []
+        if isinstance(market, dict):
+            items = market.get("allList") or []
+        elif isinstance(market, list):
+            items = market
+        for item in items:
+            if str(item.get("appId") or "") != wanted:
+                continue
+            return await self.async_install_plugin(
+                {
+                    "appId": item.get("appId"),
+                    "name": item.get("name"),
+                    "pkgName": item.get("pkgName"),
+                    "downloadURL": item.get("downloadUrl") or item.get("downloadURL"),
+                    "iconURL": item.get("iconUrl") or item.get("iconURL"),
+                    "uiURL": item.get("uiUrl") or item.get("uiURL") or "",
+                    "versionCode": item.get("versionCode"),
+                    "versionName": item.get("versionName"),
+                }
+            )
+        raise ValueError(f"市场里没有 appId={wanted} 的应用")
+
+    async def async_confirm_plugin_perms(
+        self,
+        app_id: str,
+        pkg_name: str,
+        version: str = "",
+        confirm: int = 1,
+        perms: str = "",
+    ) -> dict[str, Any]:
+        """确认插件权限（``POST /acelite/hap_confirm``）。
+
+        请求体取自 ``PluginConfirmPermRequestBean``：
+        ``appId`` / ``pkgName`` / ``version`` / ``confirm``(int) / ``perms``。
+        安装流程里如果设备要求先授权，会返回待确认的权限项，确认后继续下载。
+        """
+        body = {
+            "appId": str(app_id),
+            "pkgName": str(pkg_name),
+            "version": str(version or ""),
+            "confirm": int(confirm),
+            "perms": str(perms or ""),
+        }
+        data = await self._request(API_PLUGIN_CONFIRM, method="POST", json_body=body)
+        return data if isinstance(data, dict) else {"data": data}
+
+    async def async_uninstall_plugin(
+        self, app_id: str, pkg_name: str, action: str = "delete"
+    ) -> dict[str, Any]:
+        """卸载 / 取消 / 暂停插件（``hap_delete`` / ``hap_cancel`` / ``hap_pause``）。
+
+        三者请求体一致（``PluginDeleteRequestBean``：``appId`` + ``pkgName``），
+        只是路径不同，所以合并成一个方法按 ``action`` 分派。
+        """
+        paths = {
+            "delete": API_PLUGIN_DELETE,
+            "cancel": API_PLUGIN_CANCEL,
+            "pause": API_PLUGIN_PAUSE,
+        }
+        path = paths.get(action)
+        if path is None:
+            raise ValueError(f"不支持的操作: {action}（只能是 delete/cancel/pause）")
+        body = {"appId": str(app_id), "pkgName": str(pkg_name)}
+        data = await self._request(path, method="POST", json_body=body)
+        return data if isinstance(data, dict) else {"data": data}
+
+    async def async_query_duplicate_scan(
+        self, task_id: int = 0, offset: int = 0, limit: int = 20, filter_: int = 0
+    ) -> dict[str, Any]:
+        """查询重复照片扫描结果（POST，只读）。
+
+        实测：``{"code": 0, "data": {"fileInfo": [], "scanCount": 0,
+        "scanTotal": 0, "scanTaskStatus": 0, "mergeCount": 0,
+        "mergeTaskStatus": 0, "lastMergeTime": 0, ...}}``
+        """
+        return await self._request(
+            API_DUP_QUERY,
+            json_body={
+                "taskId": task_id,
+                "offset": offset,
+                "limit": limit,
+                "filter": filter_,
+            },
+            method="POST",
+        )
+
+    async def async_ctrl_duplicate_scan(self, act: str, task_id: int = 0) -> dict[str, Any]:
+        """启动/停止重复照片扫描（POST）。
+
+        ``act`` 取 ``DUP_ACT_START`` / ``DUP_ACT_STOP``。
+        实测 stop：``{"code": 0, "data": {"code": 0, "taskId": 0}, "des": "suc"}``
+        """
+        return await self._request(
+            API_DUP_CTRL,
+            json_body={"actType": act, "taskId": task_id},
+            method="POST",
+        )
+
+    async def _media_body(self, file_ids: list[str] | list[int]) -> dict[str, Any]:
+        """构造 delFile/recoverFile 的 body。
+
+        ⚠️ 实测（2026-10-06，AS6020-02）：这三个字段缺一不可，否则返回
+        ``30102``（``delFile``/``recoverFile`` 都是）：
+          * ``clientType`` = **会话的 clientType**（``DEVICE_CLIENT_TYPE``）。
+            用手机端的 ``1`` 会被拒；必须与 query 参数里的 clientType 一致。
+          * ``deviceId`` = ``creds.cloud_dev_id``（设备 SN，如
+            ``SN-REDACTED``）。不是客户端安装标识。
+          * ``userId`` = ``"1"``。
+        成员字段名是 ``fileId``（``DeleteMediaInfoBean$MemberBean``），
+        且必须是 **gallery 域**的 fileId（``getIncPhotosInfoTable`` 里的
+        ``fileId``），不是 ``filesvc`` 的 ``fid``。
+        """
+        creds = await self.async_ensure_credentials()
+        return {
+            "membs": [{"fileId": int(fid)} for fid in file_ids],
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": creds.cloud_dev_id,
+            "userId": "1",
+            "empty": 0,
+        }
+
+    async def async_delete_media(self, file_ids: list[str]) -> dict[str, Any]:
+        """把照片/视频移入回收站（**可逆**，不是永久删除）。
+
+        参数 ``membs`` 为文件 id 列表。删完可在「最近删除」里用
+        :meth:`async_recover_media` 恢复。集成**永不**调用 cleanBin。
+        """
+        return await self._request(
+            API_DEL_MEDIA,
+            method="POST",
+            json_body=await self._media_body(file_ids),
+        )
+
+    async def async_recover_media(self, file_ids: list[str]) -> dict[str, Any]:
+        """从回收站恢复照片/视频。"""
+        return await self._request(
+            API_RECOVER_MEDIA,
+            method="POST",
+            json_body=await self._media_body(file_ids),
+        )
+
+    async def async_post_device_reboot(self) -> dict[str, Any]:
+        """重启设备（POST）。
+
+        可恢复，但会中断服务约 1-2 分钟，期间设备不可用。
+        仅由用户显式点击按钮触发，集成绝不自动重启。
+        """
+        return await self._request(API_DEVICE_REBOOT, method="POST")
+
+    async def async_post_device_shutdown(self) -> dict[str, Any]:
+        """**关机**（POST，``/devmanage/devPowerOff``）—— 不可逆！
+
+        ⚠️ **实机验证状态**：逆向参数推断（deviceId query + 空 body，
+        与 deviceReboot 同形态），未实机跑过；如果返回 1101 请反馈抓包。
+
+        仅由用户显式点击按钮触发。关机后设备彻底不可达，需物理按键重启。
+        """
+        return await self._request(API_DEVICE_SHUTDOWN, method="POST")
+
+    async def async_post_disk_sleep(self) -> dict[str, Any]:
+        """磁盘休眠（POST）。会暂停磁盘，属可恢复操作。"""
+        return await self._request(API_DISK_SLEEP, method="POST")
+
+    async def async_get_disk_basic_info(self) -> dict[str, Any]:
+        """当前磁盘状态（``POST /devmanage/diskBasicInfo``）。
+
+        ⚠️ 此前实现用 GET → 设备一律返回 ``code=1``（2026-10-28 实测）。
+        从插件反编译查到的真实调用是 **POST + DiskParam body**
+        （`HardDriveManageActivity.H3()`）：
+
+            DiskParam param = new DiskParam(null);      // slots = null
+            api.getDiskBasicInfo(param);                // POST /devmanage/diskBasicInfo
+
+        ``DiskParam`` 三个字段 ``slots`` / ``type`` / ``version``，此处
+        slots 传 null、type/version 保持 Java 默认 0（Gson 不序列化 null，
+        所以实际 body 是 ``{"type": 0, "version": 0}``）。
+        """
+        data = await self._request(
+            API_DISK_BASIC_INFO,
+            method="POST",
+            json_body={"type": 0, "version": 0},
+        )
+        return data.get("data") or {}
+
+    async def async_get_disk_smart_info(self) -> dict[str, Any]:
+        """磁盘 SMART 健康（``/devmanage/diskSmartInfo``）。
+
+        ⚠️ **App 并不调用这个端点**（2026-10-28 复核）：``diskSmartInfo``
+        只出现在 ``RequestUri$DeviceUri`` 的常量表里，整个插件的 Retrofit
+        接口（``DeviceApi`` 等）**没有任何方法指向它** —— 之前实现是从常量表
+        抄来的推断，设备实测返回 ``code=1``。
+
+        保留方法以便未来固件支持时直接可用，但调用方应把它当作
+        「可能不可用」，不要因为它的失败而判定磁盘故障。
+        """
+        data = await self._request(API_DISK_SMART_INFO, method="GET")
+        return data.get("data") or {}
+
+    async def async_post_usb_plug_out(self) -> dict[str, Any]:
+        """弹出 USB 设备（POST）。可恢复操作。"""
+        return await self._request(API_USB_PLUG_OUT, method="POST")
+
+    async def async_get_raid_status(self) -> dict[str, Any]:
+        """RAID 阵列状态（``/raid/getraidstatus``，GET）。
+
+        ⚠️ **逆向推断**：deviceId query + 无 body，未实机验证。
+        非 RAID 设备可能返回 1101，调用方应做降级。
+        """
+        data = await self._request(API_RAID_STATUS, method="GET")
+        return data.get("data") or {}
+
+    async def async_get_device_users(self) -> list[dict[str, Any]]:
+        """设备上的全部用户（管理员 + 家庭成员）。
+
+        ``/account/userManageInfo`` 返回**数组**而非对象，每项含
+        ``level``（1=管理员 / 2=成员）、``nick``、``usage``（MB）、``state``。
+        与「当前配置条目用的账号」无关，是设备侧的完整用户列表。
+        """
+        data = await self._request(API_USER_MANAGE)
+        return data if isinstance(data, list) else []
+
+    async def async_get_usb_status(self) -> dict[str, Any]:
+        data = await self._request(API_USB_STATUS)
+        return data.get("data") or {}
+
+    async def async_mkdir(
+        self, path: str, category: str = FILE_FILES_CATEGORY
+    ) -> dict[str, Any]:
+        """新建目录（``/filesvc/mkdir``，抓包实据 + 基线实测 ``code 0``）。
+
+        实据::
+
+            POST /filesvc/mkdir?category=public
+            {"path":"/file/新建文件夹/","redundancy":0}
+            -> {"code":0,"data":{"fid":288511851128439709,...}}
+
+        要点（照抓包形态，缺一个就可能被拒）：
+        * ``path`` 是**设备路径**（``/file/...``），本方法会补上**尾斜杠**
+        * body 是**扁平**的（不是 ``tasks[]`` 数组），且**不要**带 ``Dest-File``
+          头 —— mkdir 的成功形态没有这个头
+        * ``redundancy=0``：重名直接报错，不自动改名
+        * 返回 ``data.fid``（约 2.9e17 的句柄）用于删除；**不要**拿列表里的
+          ``id`` 去删 —— 实测两者不是一回事
+        """
+        path = path if path.endswith("/") else path + "/"
+        data = await self._request(
+            API_MKDIR,
+            method="POST",
+            params={"category": category},
+            json_body={"path": path, "redundancy": 0},
+        )
+        return data.get("data") or {}
+
+    async def async_find_entry(
+        self, path: str, category: str = FILE_FILES_CATEGORY
+    ) -> dict[str, Any] | None:
+        """按路径在**父目录列表**里找出该条目（返回原始条目，含 ``fid`` / ``id``）。
+
+        目录条目的 ``path`` 字段常为空，所以只能列父目录再按名字匹配。
+        找不到时返回 ``None``。重命名要用 ``id``、跨服务复制要用 ``fid``，
+        两者都在返回的条目里。
+        """
+        clean = path.rstrip("/")
+        parent, _, name = clean.rpartition("/")
+        parent = (parent or "") + "/"
+        listing = await self.async_list_files(parent, category=category)
+        for item in listing.get("files") or []:
+            if str(item.get("name")) == name:
+                return item
+        return None
+
+    async def async_resolve_id(
+        self, path: str, category: str = FILE_FILES_CATEGORY
+    ) -> int | None:
+        """按路径解析 filesvc ``id``（重命名要用，见 :meth:`async_rename`）。"""
+        item = await self.async_find_entry(path, category=category)
+        if not item:
+            return None
+        value = item.get("id")
+        if value is None:
+            value = item.get("fid")
+        return int(value) if value is not None else None
+
+    async def async_rename(
+        self,
+        old_path: str,
+        new_path: str,
+        category: str = FILE_FILES_CATEGORY,
+        file_id: int | str | None = None,
+    ) -> dict[str, Any]:
+        """重命名（``/filesvc/rename``，抓包实据 + 实测 ``code 0``）。
+
+        实据::
+
+            POST /filesvc/rename?category=public&id=209104
+            {"newpath":"/file/测试/","oldpath":"/file/新建文件夹/"}
+            -> {"code":0}
+
+        ⚠️ 两点：
+        * query 必须带 **``id``**（该条目的 filesvc ``id``）。不传时用
+          :meth:`async_resolve_id` 列父目录按名字解析（多一次请求）
+        * 路径**按调用方给的形态原样传**：目录带尾斜杠（``/file/旧名/``），
+          文件不带。本方法不做补斜杠，避免把文件名改坏
+        """
+        if file_id is None:
+            file_id = await self.async_resolve_id(old_path, category=category)
+        if file_id is None:
+            raise HuaweiDeviceError(f"找不到路径对应的 id，无法重命名: {old_path}")
+        return await self._request(
+            API_RENAME,
+            method="POST",
+            params={"category": category, "id": str(file_id)},
+            json_body={"newpath": new_path, "oldpath": old_path},
+        )
+
+    async def async_delete_paths(
+        self,
+        paths: list[str],
+        device_id: str,
+        to_recycle: bool = True,
+        category: str = "user",
+    ) -> dict[str, Any]:
+        """删除文件空间里的路径（**实测可用**，2026-10-08）。
+
+        抓包实据（用户真实删除，``capture.jsonl`` L118）::
+
+            POST /filesvc/batchOperation?category=user&operation=remove&type=recycle
+            {"tasks":[{"clientType":3,"deviceId":"<mac>-<HOSTNAME>",
+                       "name":"","srcPath":["/file/测试/屏幕截图 ....png"],
+                       "subTaskId":1,"transId":"244833947285","type":0}]}
+            -> {"code":0,"data":{"tasks":[{"taskId":6,"transId":"..."}]}}
+
+        要点：
+        * 端点是 **``batchOperation``**（不是 ``/filesvc/remove``，后者恒 1101）
+        * ``operation=remove`` 决定了动作，``type=recycle`` 决定去向（**进回收站**）
+        * ``to_recycle=False`` → **永久删除不进回收站**（逆向推导，待实机验证）：
+          batchOperation body 加 ``operationType: "force"``；
+          ``to_recycle=True`` 时对应 ``"recycle"``
+
+        ⚠️ 本方法的 force/clear 路径是**从智慧生活 App 插件逆向推导**
+        （``517616675.jar`` 的 ``FileBatchPresenter``），**未实机测试过**；
+        如果实机返回 1101，请反馈抓包协助排查。
+        * 参数嵌在 **``tasks[]`` 数组**里，不是扁平 body
+        * ``srcPath`` 是**数组**，目录路径需带尾斜杠
+        * ⚠️ body 里的 ``deviceId`` 必须是**配置条目的 device_id**
+          （``entry.data["device_id"]``，形如 ``42e9d4b7-...``）；
+          用 ``creds.cloud_dev_id``（设备 SN）会被拒 ``1101``
+
+        返回 ``{"code":0,"data":{"tasks":[{"taskId":..,"transId":".."}]}}``。
+        删除为**异步任务**：返回成功不代表立即生效，用
+        :meth:`async_get_task_status` 查 ``progress`` 确认落地。
+        """
+        creds = await self.async_ensure_credentials()
+        body = {
+            "tasks": [{
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": device_id,
+                "name": "",
+                "srcPath": list(paths),
+                "subTaskId": 1,
+                # ⚠️ transId 必须是 **12 位数字**：实测 9 位会被拒 1101，
+                # 12 位才返回 code 0（抓包原值为 12 位）。
+                "transId": str(random.randint(10**11, 10**12 - 1)),
+                "type": 0,
+            }],
+            # 逆向自 FileBatchPresenter：force=不进回收站直接删（2026-10-13）
+            "operationType": "recycle" if to_recycle else "force",
+        }
+        return await self._request(
+            API_BATCH_OPERATION,
+            method="POST",
+            params={"category": category, "operation": "remove",
+                    "type": "recycle" if to_recycle else "force"},
+            json_body=body,
+        )
+
+    async def async_get_photos_info(
+        self, file_ids: list[int] | list[str]
+    ) -> list[dict[str, Any]]:
+        """把 fileId 换成**完整元数据**（``/gallery/getSelectedPhotosInfo``）。
+
+        实测（2026-10-08）返回每项的：``hdcFilePath``（原图）、
+        ``lcdFilePath``（大图）、``assets[].path``（``thumb``/``lcd``）、
+        ``city````createTime````favorite````hash`` 等。
+        这是**相册成员唯一能拿到图片路径的途径**。
+
+        ⚠️ 只有**有效** fileId 才有返回；从 ``getIncPhotosInfoTable``
+        取到的删除残留（``operation=2``）会返回空数组。
+        """
+        data = await self._request(
+            API_SELECTED_PHOTOS_INFO,
+            method="POST",
+            json_body={"clientType": DEVICE_CLIENT_TYPE,
+                       "fileIds": [{"fileId": f} for f in file_ids]},
+        )
+        d = data.get("data") or []
+        return d if isinstance(d, list) else []
+
+    async def async_add_album_members(
+        self,
+        album_id: int,
+        file_ids: list[int] | list[str],
+        album_name: str = "",
+        album_type: int = ALBUM_TYPE_USER,
+    ) -> dict[str, Any]:
+        """把**已有的照片**加进相册（``/gallery/addAlbumMemb``，实测 ``code 0``）。
+
+        抓包实据（2026-10-09 从 `capture_all_1791417873.jsonl` 挖出）::
+
+            POST /gallery/addAlbumMemb
+            {"clientType":3,"deviceId":"<mac>-...","albumId":13,
+             "albumName":"新建相册","albumType":6,
+             "membs":[{"fileId":281474976755920}],
+             "addTime":1791412165000}
+            -> {"code":0,"des":"suc","failIds":[],
+                "sucIds":[{"fileId":281474976755920}]}
+
+        要点：
+        * 加的是**相册域（gallery）的 fileId**，不是文件空间的 ``fid``
+          —— 从 :meth:`async_get_album_photos` 或照片增量表取
+        * 返回 ``sucIds``（成功）/ ``failIds``（失败）数组。重复添加同一张
+          也返回 suc（幂等），所以 ``failIds`` 为空才算真的都进去了
+        * ``albumType`` 默认 6（用户/共享相册）
+        * ⚠️ ``albumName`` **是必填**：不传会返回 ``30101``（实测 2026-10-09）。
+          留空时本方法会自动查相册列表补全（type=6 优先，再查 type=0）
+        """
+        creds = await self.async_ensure_credentials()
+        if not album_name:
+            album_name = await self._album_name_by_id(int(album_id))
+        return await self._request(
+            API_ADD_ALBUM_MEMB,
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "albumId": int(album_id),
+                "albumName": album_name,
+                "albumType": int(album_type),
+                "membs": [{"fileId": int(f)} for f in file_ids],
+                # 真实 Unix 毫秒，不是事件循环的单调时钟（后者差 5 个数量级，
+                # 会让照片在相册里显示成 1970 年）。
+                "addTime": int(_time.time() * 1000),
+            },
+        )
+
+    async def _album_name_by_id(self, album_id: int) -> str:
+        """按 albumId 反查相册名（``addAlbumMemb`` 的 albumName 是必填）。
+
+        ⚠️ ``albumType=0`` 的返回**不含 type=6**，所以两个都要查（已知结论）。
+        """
+        for a_type in (ALBUM_TYPE_USER, ALBUM_TYPE_ALL):
+            try:
+                albums = await self.async_get_album_list(a_type)
+            except Exception:  # noqa: BLE001
+                continue
+            for a in albums or []:
+                try:
+                    if int(a.get("albumId")) == int(album_id):
+                        return str(a.get("albumName") or "")
+                except (TypeError, ValueError):
+                    continue
+        return ""
+
+    async def async_get_single_task(
+        self, task_id: int, category: str = "user", service: str = "filesvc"
+    ) -> dict[str, Any]:
+        """查**单个**任务详情（``/<service>/getTaskStatus``，实测 ``code 0``）。
+
+        抓包实据（2026-10-09）：body 只有 ``{"category":"user","taskId":18}``。
+        与 :meth:`async_get_task_status`（批量、要 taskTypes）互补：这个按
+        ``taskId`` 精确查一个，返回同构的 ``data.tasks[]``（通常只有一项）。
+        """
+        return await self._request(
+            f"/{service}/getTaskStatus",
+            method="POST",
+            json_body={"category": category, "taskId": int(task_id)},
+        )
+
+    async def async_recycle_recover(
+        self, rid: int | str, name: str = "", device_id: str = "",
+        category: str = "public", item_type: int = 4
+    ) -> dict[str, Any]:
+        """从回收站**恢复**条目（``batchOperation`` 的 ``recycle/recover``）。
+
+        抓包实据（用户真实还原操作，2026-10-08）::
+
+            POST /filesvc/batchOperation?category=public
+                 ?operation=recycle&type=recover
+            {"tasks":[{"clientType":3,"deviceId":"<mac>-<HOSTNAME>",
+                       "name":"新建文件夹","rid":["82"],
+                       "subTaskId":1,"transId":"777394318487","type":4}]}
+            -> {"code":0,"data":{"tasks":[{"taskId":..,"transId":".."}]}}
+
+        ⚠️ 四个易错点（实测，错一个就 ``1101``/``prog=-1``）：
+        * ``operation`` 是 **``recycle``**（不是 ``remove``）
+        * ``type`` 是 **``recover``**
+        * ``rid`` 必须是**字符串的单元素数组**：``["2363"]``。
+          传整数数组 ``[2363]`` 或裸字符串 ``"2363"`` 都返回 ``1101``
+          （2026-10-08 实机对照实测）
+        * tasks 内的 ``type`` 用 **4**（目录）/ 0（文件）
+
+        ``rid`` 来自 :meth:`async_list_recycle`（必须用 GET 取）。
+        恢复是异步任务，用 :meth:`async_get_task_status` 查 ``progress`` 确认。
+        """
+        body = {"tasks": [{
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": device_id,
+            "name": name,
+            "rid": [str(rid)],
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+            "type": item_type,
+        }]}
+        return await self._request(
+            API_BATCH_OPERATION,
+            method="POST",
+            params={"category": category, "operation": "recycle", "type": "recover"},
+            json_body=body,
+        )
+
+    async def async_list_recycle(
+        self, category: str = "public", limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """列回收站条目（``/filesvc/recycleFiles``）。
+
+        ⚠️ **必须用 GET**：实测 POST 返回 ``1004``（2026-10-08）。
+        条目含 ``rid``（恢复用）、``name``、``path``、``dtime``、``type``。
+        """
+        data = await self._request(
+            API_RECYCLE,
+            {"category": category, "limit": limit, "offset": offset},
+        )
+        return (data.get("data") or {}).get("files") or []
+
+    async def async_recycle_operate(
+        self,
+        action: str,
+        rids: list[int | str] | None = None,
+        category: str = "public",
+    ) -> dict[str, Any]:
+        """回收站条目操作（``/filesvc/recycleDelFiles``）。
+
+        ⚠️ **逆向推导，待实机验证**：从智慧生活 App 插件
+        ``517616675.jar`` 的 ``RecycleOperateRequestBean`` /
+        ``FileApi.operateRecycleFiles`` / ``FileFragment.java`` 挖出，
+        之前直接调端点恒 1101，**当时没解出的关键就是：**
+
+        1. 请求要带 ``?category=`` query（之前调时漏了这个）
+        2. category 口径跟 batchOperation 不同：空串=我的文件，public=共享
+        3. body 的 ``files`` 是 **Long 数字数组**，不是字符串数组
+
+        抓包形态（从 jadx 反编译还原）::
+
+            POST /filesvc/recycleDelFiles?category=public
+            {"action": "remove", "files": [82, 123, ...]}
+            -> {"code":0}   # 或带 data.progressId（restore 时异步）
+
+        **三个 action：**
+
+        +-----------+------------------+-------------------------------+
+        | action    | 语义             | 备注                          |
+        +===========+==================+===============================+
+        | ``remove``| **永久删除**条目  | rids 必填；不可逆             |
+        | ``restore``| **恢复**条目     | rids 必填；返回 ``progressId``|
+        | ``clear`` | **清空整个回收站**| rids 传回收站任意 1 条 rid；  |
+        |           |                  | App UI 上只取第一条就 break    |
+        +-----------+------------------+-------------------------------+
+
+        ``rid`` 来自 :meth:`async_list_recycle`。
+        """
+        if action not in ("remove", "restore", "clear"):
+            raise ValueError(
+                f"action 必须是 remove / restore / clear，收到 {action!r}"
+            )
+        if action == "clear":
+            # 逆向 FileFragment.java L276-278：clear 只取 list 第一个 rid
+            if not rids:
+                raise ValueError("clear 需要至少 1 个 rid（随便哪个都行）")
+            files_body = [int(rids[0])]
+        else:
+            if not rids:
+                raise ValueError(f"{action} 需要 rids 列表")
+            files_body = [int(r) for r in rids]
+        # recycleDelFiles 的 category 口径：空串=我的文件，public=共享
+        cat_param = category if category == "public" else ""
+        return await self._request(
+            API_RECYCLE_OPERATE,
+            method="POST",
+            params={"category": cat_param},
+            json_body={"action": action, "files": files_body},
+        )
+
+    async def async_cancel_upload(
+        self, fids: list[int] | list[str], device_id: str
+    ) -> dict[str, Any]:
+        """取消进行中的上传（``/filesvc/cancelUpload``，**实测 code 0**）。
+
+        实测（2026-10-08）：body 用 **``fids`` 数组**（与 ``srcPath``/``sessionId``
+        无效，返回 1101）::
+
+            POST /filesvc/cancelUpload
+            {"clientType":3,"deviceId":"42e9d4b7-...","fids":[<fileId>]}
+            -> {"code":0}
+
+        ``fileId`` 来自 :meth:`async_prepare_upload` 的返回值。
+        """
+        return await self._request(
+            method="POST",
+            json_body={"clientType": DEVICE_CLIENT_TYPE, "deviceId": device_id,
+                       "fids": list(fids)},
+        )
+
+    async def async_file_detail(self, path: str, category: str = "public") -> dict[str, Any]:
+        """文件/目录详情（``/filesvc/detail``）。
+
+        实测（2026-10-08）：``{"path": "/file/"}`` 正常返回
+        ``{name, size, mtime, dirCount, fileCount}``；
+        **路径不存在**时返回 ``code -2``，``fid`` / ``id`` 形态则 ``1101``。
+        """
+        data = await self._request(
+            API_FILE_DETAIL,
+            method="POST",
+            json_body={"path": path, "category": category},
+            extra_headers={"Dest-File": encode_device_path(path)},
+        )
+        return data.get("data") or {}
+
+    async def async_search_files(
+        self, keyword: str, category: str = FILE_FILES_CATEGORY,
+        limit: int = 20, offset: int = 0,
+    ) -> dict[str, Any]:
+        """按关键字搜索文件空间（``/filesvc/search``，**实测可用**）。
+
+        ⚠️ 抓包里**0 条**真实请求（用户没用过搜索），参数是 2026-10-09 在 206
+        测试机上**穷举 30+ 种形态**试出来的，三个字段缺一不可：:
+
+            POST /filesvc/search
+            {"clientType":3,"deviceId":"...","query":"测试",
+             "limit":20,"offset":0}
+            -> {"code":0,"data":{"count":1,"files":[{
+                 "name":..., "category":..., "mime":..., "mtime":...}]}}
+
+        排错要点（都是实测对照）：
+        * 关键字字段是 ``query``（**不是** ``keyword``/``key``/``searchKey``）
+        * 分页字段是 ``limit``（**不是** ``num``）—— 用 ``num`` 会返回 ``21001``
+        * **GET 形态一律返回 ``1003``**，只能 POST
+        * 带上 ``category``/``dirType``/``path`` 等反而会变 ``21001``，别画蛇添足
+        """
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            API_FILE_SEARCH,
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "query": keyword,
+                "limit": int(limit),
+                "offset": int(offset),
+            },
+        )
+        return data.get("data") or {}
+
+    async def async_trans_move(
+        self,
+        src_paths: list[str],
+        dst_dir: str,
+        device_id: str,
+        src_category: str = "public",
+        dst_category: str = "public",
+    ) -> dict[str, Any]:
+        """移动文件/目录（``/trans/move``）。
+
+        抓包实据（用户真实操作，``capture.jsonl`` L239）::
+
+            POST /trans/move?category=user
+            {"tasks":[{"dCategory":"user","dPath":"/file/__probe_noop__/",
+                       "dVersion":1,"deviceId":"<mac>-<HOSTNAME>",
+                       "name":"1791391583908","sCategory":"public",
+                       "sPaths":["/file/新建文件夹/是否撒/"],
+                       "subTaskId":1,"transId":"227734064393"}]}
+
+        与 :meth:`async_delete_paths` 同构：参数嵌在 ``tasks[]`` 里。
+        """
+        body = {"tasks": [{
+            "deviceId": device_id,
+            "sCategory": src_category,
+            "sPaths": list(src_paths),
+            "dCategory": dst_category,
+            "dPath": dst_dir,
+            "dVersion": 1,
+            # ⚠️ name 必须是**真实 Unix 毫秒**（抓包里是 1791391583908）。
+            # 原来用事件循环的单调时钟（~1e7 量级），/trans/move 会回
+            # ``code=1018``（任务创建失败）。与 addTime/ctime 同一类"量纲错"。
+            "name": str(int(_time.time() * 1000)),
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+        }]}
+        return await self._request(API_TRANS_MOVE, method="POST",
+                                   params={"category": dst_category},
+                                   json_body=body)
+
+    async def async_trans_copy(
+        self,
+        src_paths: list[str],
+        dst_dir: str,
+        device_id: str,
+        src_category: str = "public",
+        dst_category: str = "public",
+    ) -> dict[str, Any]:
+        """同空间复制文件/目录（``/trans/copy``）。
+
+        与 :meth:`async_trans_move` **同构**（2026-10-08 实机对照实测）：
+        `tasks[]` 数组 + 同样的字段，扁平 body 会被拒 ``1100``::
+
+            POST /trans/copy?category=user
+            {"tasks":[{"deviceId":..,"sCategory":"user",
+                       "sPaths":["/file/源/"],"dCategory":"user",
+                       "dPath":"/file/目标/","dVersion":1,"name":"源",
+                       "subTaskId":1,"transId":"<12 位>"}]}
+            -> {"code":0,"data":{"tasks":[{"centerId":..,"id":..,"transId":..}]}}
+
+        与 move 一样是**异步任务**：``code 0`` 只代表受理，用
+        :meth:`async_get_task_status` 查进度。目标目录需**已存在**。
+        """
+        body = {"tasks": [{
+            "deviceId": device_id,
+            "sCategory": src_category,
+            "sPaths": list(src_paths),
+            "dCategory": dst_category,
+            "dPath": dst_dir,
+            "dVersion": 1,
+            # ⚠️ name 必须是**真实 Unix 毫秒**（抓包里是 1791391583908）。
+            # 原来用事件循环的单调时钟（~1e7 量级），/trans/move 会回
+            # ``code=1018``（任务创建失败）。与 addTime/ctime 同一类"量纲错"。
+            "name": str(int(_time.time() * 1000)),
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+        }]}
+        return await self._request(API_TRANS_COPY, method="POST",
+                                   params={"category": dst_category},
+                                   json_body=body)
+
+    async def async_trans_acrosscopy(
+        self,
+        src_files: list[dict[str, Any]],
+        src_service: str,
+        dst_dirs: list[dict[str, Any]],
+        dst_service: str,
+        device_id: str,
+    ) -> dict[str, Any]:
+        """跨服务复制（``/trans/acrosscopy``）。
+
+        抓包实据（``capture.jsonl`` L268）—— 把文件空间的图复制进相册::
+
+            {"clientType":3,
+             "src":{"files":[{"category":"public","fid":209056,
+                              "path":"/file/新建文件夹/屏幕截图 ....png"}],
+                    "service":"filesvc"},
+             "dest":{"dirs":[{"addTime":1791391599804,"albumId":16,
+                              "albumName":"照片","albumType":6,
+                              "category":"public"}],
+                     "service":"gallery"},
+             "deviceId":"<mac>-<HOSTNAME>",
+             "subTaskId":1,"transId":"415751786104"}
+        """
+        body = {
+            "clientType": DEVICE_CLIENT_TYPE,
+            "deviceId": device_id,
+            "src": {"files": src_files, "service": src_service},
+            "dest": {"dirs": dst_dirs, "service": dst_service},
+            "subTaskId": 1,
+            "transId": str(random.randint(10**11, 10**12 - 1)),
+        }
+        return await self._request(API_TRANS_ACROSSCOPY, method="POST", json_body=body)
+
+    async def async_get_task_status(
+        self, task_types: list[int], category: int = 2, service: str = "filesvc"
+    ) -> list[dict[str, Any]]:
+        """查传输任务中心（只读）。
+
+        ``service`` 取 ``filesvc`` / ``trans`` / ``gallery``，端点都是
+        ``/<service>/getAllTaskStatus``。每项含 ``taskId``、``originObjectName``
+        （源名）、``destination``（目标目录）、``objectType``（0 文件 / 1 目录 /
+        2 相册对象）、``progress``、``errorInfo``、``transId``。
+
+        ⚠️ ``taskTypes`` **必须给全段**，否则只能拿到一小部分（实测 2026-10-09）：
+        ``filesvc`` 传 ``[400]`` 只能拿到零星几条，传抓包里的 ``[400..408]``
+        才返回完整的 61 条历史。默认段见 :data:`~.const.TASK_TYPES_DEFAULT`。
+        """
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            f"/{service}/getAllTaskStatus",
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "taskCategory": category,
+                "taskTypes": task_types,
+            },
+        )
+        return (data.get("data") or {}).get("tasks") or []
+
+    async def async_retry_task(
+        self,
+        task_id: int,
+        task_type: int,
+        business: str = "filesvc",
+        trans_id: str | None = None,
+    ) -> dict[str, Any]:
+        """重试失败的传输任务（``POST /{business}/retryTask``）。
+
+        报文格式来自插件反编译（`home_datacenter.apk` →
+        `transmission2/model/TaskRetryRequestBean` + `TransOtherPresenter`）：
+
+            POST /{business}/retryTask
+            {"business": "filesvc", "taskId": 123, "taskType": 400}
+
+        ``business`` 取任务所属域，插件里出现过的取值：
+        ``filesvc`` / ``gallery`` / ``trans`` / ``safebox``。
+
+        App 在 ``TransTaskUtils.e(taskType, business)`` 为真时还会补
+        ``deviceId`` / ``transId`` / ``isSupportSubTask=1``（与设备侧是否支持
+        子任务有关）。这里把 ``trans_id`` 做成可选入参：服务层会先从
+        ``task_status`` 里自动查同名任务的 ``transId`` 带上来，查不到就不带，
+        退回最简报文。
+
+        ⚠️ 实测（2026-10-28，taskId 不存在时）：返回 ``code=1101`` ——
+        不是参数错误码 ``1100``，说明端点在、且这份最简报文被设备接受，
+        只是目标任务不存在/不可重试。
+        """
+        await self.async_ensure_credentials()
+        body: dict[str, Any] = {
+            "business": business,
+            "taskId": int(task_id),
+            "taskType": int(task_type),
+        }
+        if trans_id:
+            body["transId"] = str(trans_id)
+            body["isSupportSubTask"] = 1
+        data = await self._request(
+            f"/{business}/retryTask",
+            method="POST",
+            json_body=body,
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    async def async_clean_task_records(
+        self, task_ids: list[int], category: str = "user"
+    ) -> dict[str, Any]:
+        """清除任务中心的**历史记录**（``/filesvc/cleanTaskRecord``）。
+
+        ⚠️ 关键在字段名：抓包实据（2026-10-09 从 `capture_all_1791417873.jsonl`
+        挖出真实报文）是 ``taskIdList``（**不是** ``taskIds`` / ``taskId``）——
+        后两种形态实测分别返回 ``1100`` / ``1100``::
+
+            POST /filesvc/cleanTaskRecord
+            {"clientType":3,"deviceId":"<mac>-<HOSTNAME>",
+             "taskIdList":[13,14,15,16,17]}
+            -> {"code":0,"data":{"errorIdList":[]}}
+
+        ``errorIdList`` 为空 = 全部清除成功；有值则是**清除失败**的 taskId。
+        只影响任务中心的显示，不碰任何文件。
+        """
+        creds = await self.async_ensure_credentials()
+        return await self._request(
+            API_CLEAN_TASK_RECORD,
+            method="POST",
+            params={"category": category},
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "taskIdList": [int(t) for t in task_ids],
+            },
+        )
+
+    async def async_get_all_trans_tasks(self) -> list[dict[str, Any]]:
+        """跨服务传输任务**全表**（``/trans/getAllTask``，实测 ``code 0``）。
+
+        与 :meth:`async_get_task_status` 的区别：后者要传 ``taskTypes``
+        只取指定段；这个不带筛选，返回 `trans` 域全部任务。
+        实测（2026-10-08）：``{"code":0,"data":{"tasks":[]}}``；
+        同一批探测里 ``/filesvc/getAllTask`` 返回**非 JSON**（不可用）。
+        """
+        creds = await self.async_ensure_credentials()
+        data = await self._request(
+            API_TRANS_ALL_TASK,
+            method="POST",
+            json_body={
+                "clientType": DEVICE_CLIENT_TYPE,
+                "deviceId": creds.cloud_dev_id,
+                "taskCategory": 2,
+            },
+        )
+        return (data.get("data") or {}).get("tasks") or []
+
+    # ------------------------------------------------------------------
+    # 文件空间（NAS 视图，/filesvc/files + Dest-File 头）
+    # ------------------------------------------------------------------
+    async def async_list_files(
+        self,
+        dir_path: str = FILE_ROOT_PATH,
+        offset: int = 0,
+        limit: int = FILES_PAGE_SIZE,
+        category: str = FILE_FILES_CATEGORY,
+    ) -> dict[str, Any]:
+        """列文件空间目录。
+
+        ⚠️ ``category`` 区分**两个独立的空间**（实测 2026-10-08）：
+        ``user`` = 「我的文件」，``public`` = **「共享」**。
+        用户在 PC 客户端「共享」里建的目录只在 ``public`` 下可见；
+        此前硬编码 ``user`` 导致共享空间的内容**完全看不到**。
+
+        ``dir_path`` 为设备目录路径（含尾斜杠，如 ``/file/``）。必须携带
+        ``Dest-File`` 请求头（目录路径的全字节百分号编码），缺省时设备返回
+        ``{"code": 1101}``。返回 ``{"files": [...], "count": N}``：
+        目录条目 ``type`` 2/4/6，文件条目 ``type=8`` 带 ``thumb``；
+        目录条目的 ``path`` 常为空，需调用方自行拼接完整路径。
+        """
+        dir_path = dir_path if dir_path.endswith("/") else dir_path + "/"
+        data = await self._request(
+            API_FILES,
+            {
+                "category": category,
+                "dirType": FILE_FILES_DIR_TYPE,
+                "limit": limit,
+                "offset": offset,
+                "sortType": FILE_FILES_SORT,
+            },
+            extra_headers={"Dest-File": encode_device_path(dir_path)},
+        )
+        inner = data.get("data") or {}
+        files = inner.get("files") or []
+        count = inner.get("count")
+        if count is None:
+            count = inner.get("total")
+        return {"files": files, "count": int(count) if count is not None else None}
+
+    # ------------------------------------------------------------------
+    # 图片（8472 数据通道）
+    # ------------------------------------------------------------------
+    async def async_fetch_image(
+        self,
+        device_path: str,
+        service: str = "gallery",
+        category: str = "",
+    ) -> bytes | None:
+        """按设备路径取图（``/picture/thumb|asset|raw|hdc_1080`` 等）。
+
+        ⚠️ ``category`` 是能否取到的**决定因素**（实测 2026-10-08）：
+        * 相册域路径（``/picture/...``）→ ``category=""``（空）即可
+        * **文件空间/共享空间缩略图**
+          （``/file/.File_Syssvc/thumb/0001/7137.jpg``）
+          → 必须 ``category="public"``；传空会 404/403 取不到图。
+
+        ``service`` 实测对结果无影响（``gallery``/``filesvc`` 均可用）；
+        ``usb`` 保持 ``false``（``true`` 会 403）。
+        """
+        if not device_path:
+            return None
+        await self.async_ensure_credentials()
+        query = (
+            f"type=download&fileVer=&category={category}"
+            f"&service={service}&usb=false"
+        )
+        url = (
+            f"{self._data_base()}{DATA_DOWNLOAD_PATH}"
+            f"{encode_device_path(device_path)}?{query}"
+        )
+        for attempt in range(2):
+            try:
+                async with self._session.get(
+                    url,
+                    headers=self._data_headers(),
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    if resp.status == 401 and attempt == 0:
+                        await self.async_refresh_credentials()
+                        continue
+                    if resp.status != 200:
+                        _LOGGER.debug("取图失败 %s -> HTTP %s", device_path, resp.status)
+                        return None
+                    return await resp.read()
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                _LOGGER.debug("取图异常 %s: %s", device_path, err)
+                return None
+        return None

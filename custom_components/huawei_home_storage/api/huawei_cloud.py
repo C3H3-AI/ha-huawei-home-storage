@@ -1,0 +1,687 @@
+"""华为账号云侧客户端。
+
+职责（全部为纯 Python 复现，无需 PC 客户端）：
+  1. OAuth 2.0 设备码流程（首次授权）与 refresh_token 续期；
+  2. smarthome 云：message-center 登录、枚举设备（prodId == KX01）；
+  3. MQTT startService + ECDH/AES 解密，取回设备本地会话凭据。
+
+解密细节（已实测）：
+  AES-256 key = 本端一次性 EC 私钥与证书链**第一张叶子证书**公钥做 ECDH 的共享密钥 X（原始 32B，无 HKDF）；
+  ``encrypted`` hex 布局 = nonce(12) ‖ ciphertext ‖ tag(16)；
+  明文 = ciphertext XOR AES-256-CTR 密钥流（J0 = nonce‖00000001，从 J0+1 起，无 AAD/tag 校验）。
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import functools
+import json
+import logging
+import os
+import ssl
+import threading
+import time
+import uuid
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any
+
+import aiohttp
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+try:  # paho-mqtt 随 HA Core 一起提供
+    import paho.mqtt.client as mqtt
+
+    try:
+        from paho.mqtt.enums import CallbackAPIVersion
+
+        _PAHO_KWARGS: dict[str, Any] = {
+            "callback_api_version": CallbackAPIVersion.VERSION1
+        }
+    except Exception:  # paho-mqtt 1.x
+        _PAHO_KWARGS = {}
+    _PAHO_AVAILABLE = True
+except Exception:  # pragma: no cover
+    mqtt = None  # type: ignore[assignment]
+    _PAHO_KWARGS = {}
+    _PAHO_AVAILABLE = False
+
+from ..const import (
+    API_CLOUD_DEVICES,
+    API_CLOUD_LOGIN,
+    CLOUD_APP,
+    CLOUD_CURVE,
+    CLOUD_PROD_ID,
+    MQTT_CMD_TOPIC,
+    MQTT_DEFAULT_TOPIC,
+    MQTT_HOST,
+    MQTT_PORT,
+    MQTT_TIMEOUT,
+    OAUTH_CLIENT_ID,
+    OAUTH_CLIENT_SECRET,
+    OAUTH_DEVICE_CODE_URL,
+    OAUTH_SCOPE,
+    OAUTH_TOKEN_URL,
+    OAUTH_UA,
+    REQUEST_TIMEOUT,
+    SMARTHOME_BASE,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+Executor = Callable[[Callable[..., Any], Any], Awaitable[Any]]
+
+# 账号密码模式的本地令牌缓存时长（秒）。
+#
+# ⚠️ 不设缓存会引发「登录状态反复跳」的连锁反应（2026-10-28 排查）：
+#   每次云 API 调用都会走 ``async_ensure_access_token``，而账号密码模式下
+#   它会无条件调用 ``token_provider``；provider 内部
+#     · ``async_refresh_session`` 没有过期判断，每次都真发一次续期请求；
+#     · 续期成功后把新会话快照写回 ``entry.data``；
+#   而 HA 只要 entry 字段有变化就会触发 update listener，本集成的
+#   listener 又是无条件 ``async_reload`` —— 于是
+#     API 请求 → 续期 → 改 entry.data → reload → setup → API 请求 → …
+#   集成被反复拆装，实体反复 unavailable、MQTT 反复断连，用户看到的就是
+#   「账号老是被登出」。这里给令牌加一层 TTL 缓存，切断这条循环的第一环。
+#
+# 取 1800s（30 分钟）：华为 oauth_access_token 有效期约 1 小时，留足安全余量；
+# 到期后仍然正常续期，不影响长时间的稳定性。
+_ACCOUNT_TOKEN_TTL = 1800
+
+# 华为在「用户尚未授权」时返回的是 HTTP 400 +
+# {"error":1101,"sub_error":20411,"error_description":"user code not scan"}，
+# 既不是标准 OAuth 的 authorization_pending，也不是真失败 —— 必须当作「继续等待」。
+PENDING_ERRORS = {"authorization_pending", "slow_down", "authorization_waiting"}
+PENDING_SUB_ERRORS = {20411}
+
+
+def _is_authorization_pending(payload: Mapping[str, Any]) -> bool:
+    """判断轮询响应是否只是「用户还没完成授权」。"""
+    if str(payload.get("error") or "").lower() in PENDING_ERRORS:
+        return True
+    if payload.get("sub_error") in PENDING_SUB_ERRORS:
+        return True
+    desc = str(payload.get("error_description") or "").lower()
+    return "not scan" in desc or "pending" in desc
+
+
+# message-center 登录重试：华为云偶发慢响应，单次失败不应让整个集成不可用
+LOGIN_RETRY_ATTEMPTS = 3
+LOGIN_RETRY_BACKOFF = 2.0
+
+
+def _err_text(err: BaseException) -> str:
+    """把网络异常变成可读文本。
+
+    Python 3.11+ 起 ``asyncio.TimeoutError`` 是 ``TimeoutError`` 的别名，
+    ``str(err)`` 为空串，直接插进 f-string 会得到「登录失败: 」这种无信息报错。
+    这里按异常类型补齐描述，让日志能直接看出是超时还是连接/DNS/TLS 问题。
+    """
+    text = str(err).strip()
+    if text:
+        return f"{type(err).__name__}: {text}"
+    name = type(err).__name__
+    if "Timeout" in name:
+        return f"{name} (请求超时，检查网络或华为云响应)"
+    if "ClientConnector" in name:
+        return f"{name} (无法连接，检查 DNS/路由/防火墙)"
+    if "ClientSSLError" in name or "ClientConnectorSSLError" in name or "ClientCertificate" in name:
+        return f"{name} (TLS 握手失败)"
+    if "ClientResponseError" in name:
+        return f"{name} (服务端返回错误状态)"
+    if "ServerDisconnected" in name:
+        return f"{name} (服务端主动断开)"
+    return name or repr(err)
+
+class HuaweiCloudError(Exception):
+    """云侧通用错误。"""
+
+
+class HuaweiCloudAuthError(HuaweiCloudError):
+    """refresh_token 失效，需要重新走设备码授权。"""
+
+
+# ---------------------------------------------------------------------------
+# 数据模型
+# ---------------------------------------------------------------------------
+class DeviceCredentials:
+    """设备本地会话凭据（由云侧 startService 下发）。"""
+
+    __slots__ = (
+        "token",
+        "session",
+        "data_token",
+        "data_session",
+        "https_url",
+        "data_https_url",
+        "cloud_dev_id",
+        "user",
+        "raw",
+        "obtained_at",
+    )
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.token: str = data.get("token") or ""
+        self.session: str = data.get("session") or ""
+        self.data_token: str = data.get("dataToken") or ""
+        self.data_session: str = data.get("dataSession") or ""
+        self.https_url: str = (data.get("httpsUrl") or "").rstrip("/")
+        self.data_https_url: str = (data.get("dataHttpsUrl") or "").rstrip("/")
+        self.cloud_dev_id: str = data.get("devId") or ""
+        self.user: str = data.get("user") or ""
+        self.raw: dict[str, Any] = data
+        self.obtained_at: float = time.time()
+
+    @property
+    def is_complete(self) -> bool:
+        return bool(self.token and self.session)
+
+    def to_dict(self) -> dict[str, Any]:
+        """仅保留非敏感字段，供持久化/诊断用。"""
+        return {
+            "cloud_dev_id": self.cloud_dev_id,
+            "user": self.user,
+            "https_url": self.https_url,
+            "data_https_url": self.data_https_url,
+            "obtained_at": self.obtained_at,
+        }
+
+
+# ---------------------------------------------------------------------------
+# 纯函数：JWT / 加解密
+# ---------------------------------------------------------------------------
+def decode_uid(id_token: str) -> str | None:
+    """从 id_token(JWT) 的 payload 中取 uid。"""
+    try:
+        payload = id_token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload)).get("uid")
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("无法解析 id_token 中的 uid")
+        return None
+
+
+def _aes_ctr_keystream_xor(key: bytes, blob: bytes) -> bytes:
+    """nonce(12) ‖ ct ‖ tag(16)，明文 = ct XOR CTR 密钥流。"""
+    nonce, rest = blob[:12], blob[12:]
+    body_ct = rest[:-16]
+
+    def _block(block_in: bytes) -> bytes:
+        enc = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+        return enc.update(block_in) + enc.finalize()
+
+    counter = int.from_bytes(nonce + b"\x00\x00\x00\x01", "big")
+    keystream = b""
+    while len(keystream) < len(body_ct):
+        counter += 1
+        keystream += _block((counter & ((1 << 128) - 1)).to_bytes(16, "big"))
+    return bytes(a ^ b for a, b in zip(body_ct, keystream))
+
+
+def decrypt_credentials(
+    private_key: ec.EllipticCurvePrivateKey, chain_pem: str, encrypted_hex: str
+) -> dict[str, Any]:
+    """用本端私钥 + 叶子证书公钥 ECDH，解出 startService 下发的凭据 JSON。"""
+    leaf = x509.load_pem_x509_certificate(chain_pem.encode())
+    key = private_key.exchange(ec.ECDH(), leaf.public_key())
+    plain = _aes_ctr_keystream_xor(key, bytes.fromhex(encrypted_hex))
+    text = plain.decode("utf-8", "replace")
+    start = text.find("{")
+    if start < 0:
+        raise HuaweiCloudError(f"解密结果不是 JSON: {text[:120]!r}")
+    try:
+        creds, _ = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError as err:
+        # 明文里确实有 '{' 但后续不是合法 JSON：解出的密钥不对（ECDH/AES 状态
+        # 不匹配）或设备返回被截断。属**瞬时 / 设备侧**故障，不是凭据失效。
+        #
+        # 这里必须显式包装：JSONDecodeError 不是 HuaweiCloudError，
+        # 会逃出 device.py 的 `except HuaweiCloudError` 分类，冒泡到
+        # DataUpdateCoordinator 变成 "Unexpected error fetching ..."，
+        # 绕过各协调器自己的降级分支（实测：相册协调器整条硬失败）。
+        #
+        # 刻意不记录明文内容（可能含下发的凭据），只记长度。
+        raise HuaweiCloudError(
+            f"解密结果 JSON 解析失败（明文 {len(text)} 字节，未记录内容）: {_err_text(err)}"
+        ) from err
+    return creds
+
+
+def _ssl_context() -> ssl.SSLContext:
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001
+        return ssl.create_default_context()
+
+
+# ---------------------------------------------------------------------------
+# 阻塞段：MQTT startService + ECDH 解密
+# ---------------------------------------------------------------------------
+def start_service_blocking(
+    *,
+    access_token: str,
+    uid: str,
+    mqtt_client_id: str | None,
+    mqtt_topic: str,
+    cloud_dev_id: str,
+    dev_mac: str,
+    product: str,
+    timeout: int = MQTT_TIMEOUT,
+) -> dict[str, Any]:
+    """发布 startService 指令，等待设备推送加密凭据并解密。"""
+    if not _PAHO_AVAILABLE:
+        raise HuaweiCloudError("缺少 paho-mqtt 依赖")
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    pub_pem = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+
+    payload = {
+        "body": {
+            "app": CLOUD_APP,
+            "curve": CLOUD_CURVE,
+            "device": dev_mac,
+            "filter": "",
+            "keyid": "memospace_" + os.urandom(32).hex(),
+            "matchId": uuid.uuid4().hex.upper() + str(int(time.time())),
+            "product": product,
+            "pubKey": pub_pem,
+            "reserved": "",
+        },
+        "header": {
+            "accessToken": access_token,
+            "from": f"/users/{uid}",
+            "method": "POST",
+            "mode": "ACK",
+            "requestId": str(uuid.uuid4()).upper(),
+            "timestamp": time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
+            "to": f"/devices/{cloud_dev_id}/services/startService",
+        },
+    }
+
+    result: dict[str, Any] = {}
+    done = threading.Event()
+    # 诊断计数（不改变任何行为）：本轮收到的候选消息数、以及各条的 keyid 是否
+    # 与我们本次发出的匹配。用于事后判定"拿错消息/私钥配对错乱"这类偶发失败
+    # 的根因——**只记条数与布尔判定，不记录任何消息内容或凭据**。
+    diag = {"candidates": 0, "keyid_match": 0, "payloads_parsed": 0}
+    my_keyid = (payload.get("body") or {}).get("keyid") or ""
+
+    def _on_connect(client, userdata, flags, rc):  # noqa: ANN001
+        if rc == 0:
+            client.subscribe(mqtt_topic, qos=1)
+
+    def _on_message(client, userdata, msg):  # noqa: ANN001
+        try:
+            body = json.loads(msg.payload.decode("utf-8", "replace")).get("body", {})
+        except Exception:  # noqa: BLE001
+            return
+        diag["payloads_parsed"] += 1
+        if isinstance(body, dict) and body.get("devId") == cloud_dev_id and "services" in body:
+            diag["candidates"] += 1
+            if my_keyid and body.get("keyid") == my_keyid:
+                diag["keyid_match"] += 1
+            result["data"] = body
+            done.set()
+
+    client = mqtt.Client(client_id=mqtt_client_id, **_PAHO_KWARGS)
+    client.username_pw_set(uid, access_token)
+    client.tls_set_context(_ssl_context())
+    client.on_connect = _on_connect
+    client.on_message = _on_message
+    client.connect(MQTT_HOST, MQTT_PORT, 60)
+    client.loop_start()
+    try:
+        for _ in range(50):
+            if client.is_connected():
+                break
+            time.sleep(0.2)
+        client.publish(MQTT_CMD_TOPIC, json.dumps(payload), qos=1)
+        if not done.wait(timeout):
+            raise HuaweiCloudError(
+                f"MQTT 未收到设备响应（超时）｜诊断: {diag}"
+            )
+    finally:
+        try:
+            client.loop_stop()
+            client.disconnect()
+        except Exception:  # noqa: BLE001
+            pass
+
+    body = result["data"]
+    services = body.get("services") or []
+    svc = next((s for s in services if s.get("sid") == "startService"), None)
+    info = (svc or {}).get("data") or {}
+    chain, encrypted = info.get("chain"), info.get("encrypted")
+    if not chain or not encrypted:
+        # ⚠️ 设备失败时会返回 ``data: {"code": 8005, "matchId": ...}`` 而**没有**
+        # chain/encrypted。此前只报「缺少 chain/encrypted」，把设备给的**真实
+        # 错误码吞掉了**，排障只能靠临时加日志。这里把 code / 可用字段带出来。
+        dev_code = info.get("code")
+        extra = f"，设备 code={dev_code}" if dev_code is not None else ""
+        fields = ",".join(sorted(info.keys()))[:60] if isinstance(info, dict) else ""
+        raise HuaweiCloudError(
+            f"设备返回缺少 chain/encrypted{extra}"
+            f"（data 字段: {fields or '空'}）｜诊断: {diag}"
+        )
+    try:
+        return decrypt_credentials(private_key, chain, encrypted)
+    except HuaweiCloudError as err:
+        # 把本轮 MQTT 诊断带进错误：candidates>1 或 keyid_match=0 → 说明
+        # "多响应/私钥配对错乱"；否则更可能是设备侧下发的密文异常。
+        raise HuaweiCloudError(f"{err}｜诊断: {diag}") from err
+
+
+# ---------------------------------------------------------------------------
+# 异步客户端
+# ---------------------------------------------------------------------------
+class HuaweiCloudClient:
+    """华为账号云侧客户端（设备码 → 凭据下发）。"""
+
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        refresh_token: str | None = None,
+        access_token: str | None = None,
+        executor: Executor | None = None,
+        token_provider: Callable[[], Awaitable[str]] | None = None,
+    ) -> None:
+        self._session = session
+        self.refresh_token = refresh_token
+        self.access_token = access_token
+        self._executor = executor
+        self._token_provider = token_provider
+        self._lock = asyncio.Lock()
+        # 账号密码模式的本地令牌缓存到期时间（time.monotonic 基准）
+        self._token_cache_until: float = 0.0
+
+    # -- 会话生命周期 ------------------------------------------------------
+    def set_executor(self, executor: Executor) -> None:
+        self._executor = executor
+
+    async def _run_blocking(
+        self, func: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
+        # hass.async_add_executor_job 只接受位置参数，含 kwargs 时用 partial 包一层
+        if kwargs:
+            func = functools.partial(func, *args, **kwargs)
+            args = ()
+        if self._executor is not None:
+            return await self._executor(func, *args)
+        return await asyncio.get_running_loop().run_in_executor(None, func, *args)
+
+    # -- 静态：设备码流程（config flow 用） --------------------------------
+    @staticmethod
+    async def async_request_device_code(session: aiohttp.ClientSession) -> dict[str, Any]:
+        """申请设备码，返回 device_code / user_code / verification_url 等。"""
+        data = {"client_id": OAUTH_CLIENT_ID, "scope": OAUTH_SCOPE}
+        try:
+            async with session.post(
+                OAUTH_DEVICE_CODE_URL,
+                data=data,
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": OAUTH_UA,
+                },
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+            ) as resp:
+                payload = await resp.json(content_type=None)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise HuaweiCloudError(f"申请设备码失败: {_err_text(err)}") from err
+        if "device_code" not in payload:
+            raise HuaweiCloudError(f"申请设备码被拒: {payload}")
+        return payload
+
+    @staticmethod
+    async def async_poll_device_code(
+        session: aiohttp.ClientSession, device_code: str
+    ) -> dict[str, Any] | None:
+        """轮询换取 token；仍在等待用户授权时返回 None。"""
+        data = {
+            "grant_type": "device_code",
+            "code": device_code,
+            "client_id": OAUTH_CLIENT_ID,
+            "client_secret": OAUTH_CLIENT_SECRET,
+        }
+        try:
+            async with session.post(
+                OAUTH_TOKEN_URL,
+                data=data,
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": OAUTH_UA,
+                },
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+            ) as resp:
+                payload = await resp.json(content_type=None)
+                status = resp.status
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise HuaweiCloudError(f"轮询设备码失败: {_err_text(err)}") from err
+
+        if status == 200 and payload.get("access_token"):
+            return payload
+        if _is_authorization_pending(payload):
+            return None
+        raise HuaweiCloudError(
+            "设备码轮询被拒: " + str(payload.get("error_description") or payload)[:160]
+        )
+
+    # -- access_token 续期 -------------------------------------------------
+    async def async_ensure_access_token(self) -> str:
+        """返回可用的 access_token。
+
+        两种来源：
+          - 账号密码模式：由 ``token_provider`` 提供（本集成自带的账号登录）
+          - 设备码模式：用 ``refresh_token`` 续期
+        """
+        if self._token_provider is not None:
+            # 账号密码模式。provider 内部会「先续期、失败再账号密码登录」，
+            # 每次调用都是一次真实网络请求 + 一次 entry.data 写入，所以必须
+            # 自己缓存，不能像设备码模式那样每次都问它。加锁避免并发请求
+            # （轮询 + MQTT 登录 + 相册统计可能同时进来）重复续期。
+            async with self._lock:
+                now = time.monotonic()
+                if self.access_token and now < self._token_cache_until:
+                    _LOGGER.debug(
+                        "账号令牌命中缓存，剩余 %.0f 秒（不重复续期）",
+                        self._token_cache_until - now,
+                    )
+                    return self.access_token
+                _LOGGER.debug("账号令牌缓存未命中，发起续期/登录")
+                self.access_token = await self._token_provider()
+                self._token_cache_until = now + _ACCOUNT_TOKEN_TTL
+                return self.access_token
+
+        async with self._lock:
+            if self.access_token:
+                return self.access_token
+            if not self.refresh_token:
+                raise HuaweiCloudAuthError("缺少 refresh_token")
+            data = {
+                "grant_type": "refresh_token",
+                "refresh_token": self.refresh_token,
+                "client_id": OAUTH_CLIENT_ID,
+                "client_secret": OAUTH_CLIENT_SECRET,
+            }
+            try:
+                async with self._session.post(
+                    OAUTH_TOKEN_URL,
+                    data=data,
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "User-Agent": OAUTH_UA,
+                    },
+                    timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+                ) as resp:
+                    payload = await resp.json(content_type=None)
+                    status = resp.status
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                raise HuaweiCloudError(f"刷新 access_token 失败: {_err_text(err)}") from err
+
+            if status != 200 or not payload.get("access_token"):
+                raise HuaweiCloudAuthError(
+                    "refresh_token 已失效，请重新授权: "
+                    + str(payload.get("error_description") or payload)[:160]
+                )
+            self.access_token = payload["access_token"]
+            # 华为可能轮换 refresh_token；未返回则沿用旧值
+            if payload.get("refresh_token"):
+                self.refresh_token = payload["refresh_token"]
+            return self.access_token
+
+    def invalidate_access_token(self) -> None:
+        self.access_token = None
+        # 同时清掉本地 TTL 缓存，否则下次调用会以为「还在有效期内」
+        self._token_cache_until = 0.0
+
+    # -- smarthome 云 ------------------------------------------------------
+    def _cloud_headers(self, access_token: str) -> dict[str, str]:
+        return {
+            "Accept": "*/*",
+            "Content-Type": "application/json;Charset=UTF-8",
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": OAUTH_UA,
+        }
+
+    async def async_cloud_login(self) -> dict[str, Any]:
+        """message-center 登录，拿到 MQTT topic / clientId。"""
+        access_token = await self.async_ensure_access_token()
+        payload = {
+            "deviceInfo": {
+                "deviceAliasName": "ha_home_storage",
+                "deviceID": CLOUD_APP,
+                "deviceType": CLOUD_APP,
+                "terminalType": "device",
+            },
+            "language": "ZH",
+        }
+        # 华为云偶发慢响应；单次超时就整个集成不可用太脆，这里做有限重试。
+        # 只对超时和连接类错误重试，业务错误（如 401）直接抛出。
+        last_err: BaseException | None = None
+        for attempt in range(1, LOGIN_RETRY_ATTEMPTS + 1):
+            try:
+                async with self._session.post(
+                    SMARTHOME_BASE + API_CLOUD_LOGIN,
+                    json=payload,
+                    headers=self._cloud_headers(access_token),
+                    timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+                ) as resp:
+                    data = await resp.json(content_type=None)
+                last_err = None
+                break
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                last_err = err
+                if attempt >= LOGIN_RETRY_ATTEMPTS:
+                    break
+                _LOGGER.debug(
+                    "message-center 登录第 %d/%d 次失败（%s），%.1fs 后重试",
+                    attempt, LOGIN_RETRY_ATTEMPTS, _err_text(err), LOGIN_RETRY_BACKOFF,
+                )
+                await asyncio.sleep(LOGIN_RETRY_BACKOFF * attempt)
+        if last_err is not None:
+            raise HuaweiCloudError(
+                f"message-center 登录失败（重试 {LOGIN_RETRY_ATTEMPTS} 次）: "
+                f"{_err_text(last_err)}"
+            ) from last_err
+        if "mqttTopic" not in data and "mqttClientId" not in data:
+            raise HuaweiCloudError(f"message-center 登录返回异常: {str(data)[:200]}")
+        return data
+
+    async def async_list_devices(self) -> list[dict[str, Any]]:
+        """列出云侧设备。"""
+        access_token = await self.async_ensure_access_token()
+        try:
+            async with self._session.get(
+                SMARTHOME_BASE + API_CLOUD_DEVICES,
+                headers=self._cloud_headers(access_token),
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+            ) as resp:
+                data = await resp.json(content_type=None)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise HuaweiCloudError(f"获取云设备列表失败: {_err_text(err)}") from err
+        if isinstance(data, dict) and data.get("errorCode"):
+            raise HuaweiCloudError(f"获取云设备列表失败: {str(data)[:200]}")
+        return data if isinstance(data, list) else []
+
+    async def async_get_storage_device(self) -> dict[str, Any]:
+        """定位家庭存储设备（prodId == KX01）。"""
+        devices = await self.async_list_devices()
+        storage = [
+            d for d in devices if (d.get("devInfo") or {}).get("prodId") == CLOUD_PROD_ID
+        ]
+        if not storage:
+            raise HuaweiCloudError(
+                f"账号下未找到家庭存储设备（prodId={CLOUD_PROD_ID}）"
+            )
+        return storage[0]
+
+    # -- 主流程：取设备凭据 ------------------------------------------------
+    async def async_fetch_device_credentials(
+        self,
+        cloud_dev_id: str,
+        uid: str,
+        dev_mac: str,
+        product: str,
+    ) -> DeviceCredentials:
+        """完整链路：登录 → MQTT startService → ECDH 解密 → 设备凭据。
+
+        ⚠️ 令牌失效时自动清缓存重试一次（2026-10-28 加）：
+
+        华为的 token 可能在本端 TTL 还没到期时就失效（服务端提前回收、
+        多端登录互踢等）。此时若直接把异常抛上去，coordinator 会把设备侧
+        401 转成 ``ConfigEntryAuthFailed`` —— HA 会弹「需要重新认证」，
+        用户看到的就是「账号老是被登出」。这里先静默重取一次令牌，
+        绝大多数情况能自愈，不会打扰用户。
+        """
+        try:
+            return await self._async_fetch_credentials_once(
+                cloud_dev_id, uid, dev_mac, product
+            )
+        except HuaweiCloudError as err:
+            text = str(err).lower()
+            # 只对「可能是令牌问题」的错误重试一次；确定性的结构错误不浪费请求
+            if not isinstance(err, HuaweiCloudAuthError) and not any(
+                key in text for key in ("token", "401", "expired", "认证", "凭据失效")
+            ):
+                raise
+            _LOGGER.debug("取设备凭据失败，清除令牌缓存后重试一次: %s", err)
+            self.invalidate_access_token()
+            return await self._async_fetch_credentials_once(
+                cloud_dev_id, uid, dev_mac, product
+            )
+
+    async def _async_fetch_credentials_once(
+        self,
+        cloud_dev_id: str,
+        uid: str,
+        dev_mac: str,
+        product: str,
+    ) -> DeviceCredentials:
+        login = await self.async_cloud_login()
+        topic = login.get("mqttTopic") or MQTT_DEFAULT_TOPIC
+        client_id = login.get("mqttClientId")
+        access_token = self.access_token or ""
+
+        data = await self._run_blocking(
+            start_service_blocking,
+            access_token=access_token,
+            uid=uid,
+            mqtt_client_id=client_id,
+            mqtt_topic=topic,
+            cloud_dev_id=cloud_dev_id,
+            dev_mac=dev_mac,
+            product=product,
+        )
+        creds = DeviceCredentials(data)
+        if not creds.is_complete:
+            raise HuaweiCloudError(f"下发的凭据不完整: {sorted(data.keys())}")
+        _LOGGER.debug(
+            "已获取设备凭据: devId=%s user=%s", creds.cloud_dev_id, creds.user
+        )
+        return creds

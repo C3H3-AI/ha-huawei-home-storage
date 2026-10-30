@@ -1,0 +1,1324 @@
+{
+  "title": "Huawei Home Storage",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Huawei Home Storage",
+        "description": "Choose how to sign in. Either way, the device IP, MAC, serial number and model are fetched from the cloud automatically.",
+        "data": {
+          "login_method": "Login method"
+        }
+      },
+      "account": {
+        "title": "Sign in to Huawei Account",
+        "description": "Enter your Huawei account and password. Credentials are stored only in your Home Assistant instance and are used to discover the device.",
+        "data": {
+          "account": "Huawei account (phone / email)",
+          "password": "Password"
+        }
+      },
+      "challenge": {
+        "title": "Account verification code",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "Verification code"
+        }
+      },
+      "authorize": {
+        "title": "Authorize Huawei Account",
+        "description": "Open the following URL (or scan the code) in a browser and confirm the authorization:\n\n{url}\n\nVerification code: {code}\n\nThen press Submit.",
+        "data": {}
+      },
+      "retry": {
+        "title": "Huawei Home Storage",
+        "description": "Could not reach Huawei Cloud. Check Home Assistant's network and press Submit to retry.",
+        "data": {}
+      },
+      "device": {
+        "title": "Select device",
+        "description": "Choose the Home Storage device to add from your account.",
+        "data": {
+          "device_id": "Device"
+        }
+      },
+      "menu": {
+        "title": "Account management",
+        "description": "{accounts} account(s) connected: {list}. Device attributes (disk, online, file space) come from the admin account; album stats differ per account.",
+        "menu_options": {
+          "add_account": "Add account",
+          "remove_account": "Remove account",
+          "relogin": "Re-login an account"
+        }
+      },
+      "add_account": {
+        "title": "Add Huawei account",
+        "description": "Enter the Huawei account to connect to this storage. Each account sees its own albums and files.",
+        "data": {
+          "account": "Huawei account (phone / email)",
+          "password": "Password"
+        }
+      },
+      "remove_account": {
+        "title": "Remove account",
+        "description": "Pick an account to remove (at least one is kept). Its album entities are removed too.",
+        "data": {
+          "account": "Account"
+        }
+      },
+      "relogin": {
+        "title": "Re-login account",
+        "description": "Update credentials for an expired account without affecting others.",
+        "data": {
+          "account": "Account",
+          "password": "Password"
+        }
+      },
+      "acct_challenge": {
+        "title": "Verification code",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "Code"
+        }
+      },
+      "challenge_channel": {
+        "title": "Choose verification method",
+        "description": "This Huawei account needs a verification code. Choose how to receive it: **SMS** sends the code to the phone bound to the account; **Signed-in device** requires you to read it on a Huawei device already signed in to this account."
+      },
+      "acct_challenge_channel": {
+        "title": "Choose verification method",
+        "description": "This Huawei account needs a verification code. Choose how to receive it: **SMS** sends the code to the phone bound to the account; **Signed-in device** requires you to read it on a Huawei device already signed in to this account."
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach Huawei Cloud, check your network and retry.",
+      "invalid_auth": "Incorrect Huawei account or password.",
+      "invalid_challenge": "Incorrect or expired verification code, please retry.",
+      "auth_failed": "Authorization failed, please start over.",
+      "authorization_pending": "Authorization not detected yet. Confirm in the browser, then submit again.",
+      "code_expired": "The verification code expired. A new one has been generated, please authorize again.",
+      "no_device": "No Home Storage device found in this account.",
+      "unknown": "Unexpected error, check the logs.",
+      "account_exists": "This account is already connected.",
+      "too_many_accounts": "Account limit reached.",
+      "code_dispatch_failed": "Could not send the verification code. Try again or pick another method."
+    },
+    "abort": {
+      "cannot_connect": "Cannot reach Huawei Cloud or obtain device credentials.",
+      "no_device": "No Home Storage device found in this account.",
+      "already_configured": "This device is already configured for this Huawei account. To access the same device with another account, add it again with that account.",
+      "reauth_successful": "Re-authorization successful.",
+      "smarthome_unavailable": "Account login module unavailable; use device-code authorization instead.",
+      "too_many_accounts": "Maximum number of accounts reached.",
+      "account_exists": "This account is already connected.",
+      "auth_failed": "Authorization failed, please start over.",
+      "cannot_remove_last": "At least one account must remain.",
+      "account_not_found": "Account not found.",
+      "reconfigure_successful": "Account information updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Account management",
+        "description": "{accounts} account(s) connected: {list}. Device attributes (disk, online, file space) come from the admin account; album stats differ per account.",
+        "menu_options": {
+          "add_account": "Add account",
+          "remove_account": "Remove account",
+          "relogin": "Re-login an account",
+          "host": "Device IP (set manually if auto-detect fails)",
+          "panel_access": "Panel visibility (who can see it)",
+          "user_accounts": "Per-user account access"
+        }
+      },
+      "host": {
+        "title": "Device IP",
+        "description": "Connected accounts: {accounts}. The device IP is normally auto-detected; set it manually only if detection failed.",
+        "data": {
+          "host": "Device IP (leave empty for auto-detect)"
+        }
+      },
+      "add_account": {
+        "title": "Add Huawei account",
+        "description": "Enter the Huawei account to connect to this storage. Each account sees its own albums and files.",
+        "data": {
+          "account": "Huawei account (phone / email)",
+          "password": "Password"
+        }
+      },
+      "remove_account": {
+        "title": "Remove account",
+        "description": "Pick an account to remove (at least one is kept). Its album entities are removed too.",
+        "data": {
+          "account": "Account"
+        }
+      },
+      "relogin": {
+        "title": "Re-login account",
+        "description": "Update credentials for an expired account without affecting others.",
+        "data": {
+          "account": "Account",
+          "password": "Password"
+        }
+      },
+      "acct_challenge": {
+        "title": "Verification code",
+        "description": "{prompt}",
+        "data": {
+          "challenge_code": "Code"
+        }
+      },
+      "acct_challenge_channel": {
+        "title": "Choose verification method",
+        "description": "This Huawei account needs a verification code. Choose how to receive it: **SMS** sends the code to the phone bound to the account; **Signed-in device** requires you to read it on a Huawei device already signed in to this account."
+      },
+      "panel_access": {
+        "title": "Panel visibility",
+        "description": "The panel can browse private photos and files on the storage. Home Assistant panels only support \"admin only\" (no per-user access control). Keep admin-only unless you want every HA user to see it.",
+        "data": {
+          "panel_admin_only": "Admin only (recommended)"
+        }
+      },
+      "user_accounts": {
+        "title": "Assign accounts to users",
+        "description": "Limit which Huawei accounts each Home Assistant user can see (issue #35). One per line: `ha_user = account`, comma-separate multiple accounts; use the real account or an alias below.\n\nAvailable aliases:/n{aliases}/n/nLeave empty for no restriction. Administrators are never restricted.",
+        "data": {
+          "user_account_map": "User → accounts"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Cannot reach Huawei Cloud or fetch device credentials.",
+      "smarthome_unavailable": "The account login module is unavailable; use device-code authorization instead.",
+      "too_many_accounts": "Account limit reached (max 8).",
+      "account_exists": "This account is already in this entry.",
+      "auth_failed": "Authorization failed; please restart the configuration.",
+      "cannot_remove_last": "At least one account must remain.",
+      "account_not_found": "Account not found."
+    },
+    "error": {
+      "invalid_auth": "Incorrect Huawei account or password.",
+      "invalid_challenge": "Incorrect or expired verification code.",
+      "account_exists": "This account is already in this entry.",
+      "code_dispatch_failed": "Could not send the verification code. Try again or pick another method.",
+      "invalid_user_accounts": "Invalid format: each line must be `user = account`, and the account must belong to this device."
+    }
+  },
+  "selector": {
+    "login_method": {
+      "options": {
+        "account": "Huawei account + password (no browser hop, recommended)",
+        "device_code": "Device code (confirm once in a browser, HA never sees the password)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "photos": {
+        "name": "Photos"
+      },
+      "videos": {
+        "name": "Videos"
+      },
+      "albums_user": {
+        "name": "User albums"
+      },
+      "albums_face": {
+        "name": "People albums"
+      },
+      "albums_scene": {
+        "name": "Scene albums"
+      },
+      "albums_place": {
+        "name": "Place albums"
+      },
+      "trash": {
+        "name": "Recently deleted"
+      },
+      "disk_total": {
+        "name": "Disk total"
+      },
+      "disk_used": {
+        "name": "Disk used"
+      },
+      "disk_free": {
+        "name": "Disk free"
+      },
+      "disk_usage": {
+        "name": "Disk usage"
+      },
+      "account_quota_used": {
+        "name": "Account usage"
+      },
+      "device_users": {
+        "name": "Device users"
+      },
+      "device_admins": {
+        "name": "Administrators"
+      },
+      "disk_slots": {
+        "name": "Disks"
+      },
+      "usb_devices": {
+        "name": "USB devices"
+      },
+      "disk_slot_total": {
+        "name": "Disk {slot} total"
+      },
+      "disk_slot_used": {
+        "name": "Disk {slot} used"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      },
+      "upgrade_state": {
+        "name": "Upgrade state"
+      },
+      "cpu_model": {
+        "name": "CPU model"
+      },
+      "cpu_cores": {
+        "name": "CPU cores"
+      },
+      "serial_number": {
+        "name": "Serial number"
+      },
+      "cpu_usage": {
+        "name": "CPU usage"
+      },
+      "cpu_temperature": {
+        "name": "CPU temperature"
+      },
+      "memory_total": {
+        "name": "Memory total"
+      },
+      "memory_used": {
+        "name": "Memory used"
+      },
+      "duplicate_photos": {
+        "name": "Duplicate photos"
+      },
+      "duplicate_scan_status": {
+        "name": "Duplicate scan status"
+      },
+      "samba_public_enabled": {
+        "name": "Public Samba share"
+      },
+      "samba_user_enabled": {
+        "name": "User Samba share"
+      },
+      "auto_upgrade": {
+        "name": "Auto upgrade"
+      },
+      "auto_upgrade_window": {
+        "name": "Auto upgrade window"
+      },
+      "ipv4_address": {
+        "name": "IPv4 address"
+      },
+      "ipv6_address": {
+        "name": "IPv6 address"
+      },
+      "operation_devices": {
+        "name": "Client devices"
+      },
+      "error_code": {
+        "name": "Device error code"
+      },
+      "repair_mode": {
+        "name": "Repair mode"
+      },
+      "recent_files": {
+        "name": "Recent files"
+      },
+      "all_files": {
+        "name": "All files"
+      },
+      "installed_plugins": {
+        "name": "Installed plugins"
+      },
+      "disk_used_percent": {
+        "name": "Disk usage"
+      },
+      "disk_error": {
+        "name": "Disk error"
+      }
+    },
+    "binary_sensor": {
+      "online": {
+        "name": "Online"
+      },
+      "usb": {
+        "name": "USB device"
+      }
+    },
+    "button": {
+      "disk_sleep": {
+        "name": "Disk sleep"
+      },
+      "usb_plug_out": {
+        "name": "Eject USB"
+      },
+      "device_reboot": {
+        "name": "Reboot device"
+      }
+    }
+  },
+  "services": {
+    "create_folder": {
+      "name": "Create folder",
+      "description": "Create folder(s) in the file space (path for one, paths for many; duplicate names fail instead of being renamed).",
+      "fields": {
+        "path": {
+          "name": "Folder path",
+          "description": "Single folder, trailing slash required."
+        },
+        "paths": {
+          "name": "Folder paths (batch)",
+          "description": "The device batch endpoint is not solved; folders are created one by one."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "rename_path": {
+      "name": "Rename path",
+      "description": "Rename a file or folder (trailing slash for folders, none for files).",
+      "fields": {
+        "old_path": {
+          "name": "Old path",
+          "description": "Path to rename."
+        },
+        "new_path": {
+          "name": "New path",
+          "description": "New path in the same parent folder."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "file_id": {
+          "name": "Entry id",
+          "description": "Leave empty to resolve it by listing the parent folder."
+        }
+      }
+    },
+    "move_paths": {
+      "name": "Move files/folders",
+      "description": "Move files or folders into a destination folder (async task).",
+      "fields": {
+        "paths": {
+          "name": "Source paths",
+          "description": "Folders need a trailing slash."
+        },
+        "dest_dir": {
+          "name": "Destination folder",
+          "description": "Must already exist."
+        },
+        "category": {
+          "name": "Source space",
+          "description": "user = My Files; public = Shared."
+        },
+        "dest_category": {
+          "name": "Destination space",
+          "description": "Defaults to the source space."
+        }
+      }
+    },
+    "copy_paths": {
+      "name": "Copy files/folders",
+      "description": "Copy files or folders into a destination folder (async task; destination must exist).",
+      "fields": {
+        "paths": {
+          "name": "Source paths",
+          "description": "Folders need a trailing slash."
+        },
+        "dest_dir": {
+          "name": "Destination folder",
+          "description": "Must already exist."
+        },
+        "category": {
+          "name": "Source space",
+          "description": "user = My Files; public = Shared."
+        },
+        "dest_category": {
+          "name": "Destination space",
+          "description": "Defaults to the source space."
+        }
+      }
+    },
+    "delete_paths": {
+      "name": "Delete files/folders",
+      "description": "Delete files or folders from the file space — moved to recycle bin by default; skip_recycle=true to permanently delete.",
+      "fields": {
+        "paths": {
+          "name": "Paths",
+          "description": "Folders need a trailing slash."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "skip_recycle": {
+          "name": "Skip recycle bin",
+          "description": "true = permanently delete without recycle bin (⚠️ irreversible)."
+        }
+      }
+    },
+    "upload_file": {
+      "name": "Upload file",
+      "description": "Upload text or a file from the HA host into the device file space.",
+      "fields": {
+        "dest_path": {
+          "name": "Destination path",
+          "description": "e.g. /file/backup/note.txt."
+        },
+        "content": {
+          "name": "Text content",
+          "description": "Alternative to local_path."
+        },
+        "local_path": {
+          "name": "Local file path",
+          "description": "Path on the HA host (commonly readable under /config)."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "download_file": {
+      "name": "Download file",
+      "description": "Stream a file from the device file space to the HA host (writes are limited to the uploads folder).",
+      "fields": {
+        "path": {
+          "name": "Device path",
+          "description": "e.g. /file/backup/note.txt."
+        },
+        "local_path": {
+          "name": "Local destination path",
+          "description": "Limited to /config/uploads; pass a folder to reuse the device file name."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "cancel_upload": {
+      "name": "Cancel upload",
+      "description": "Cancel an in-progress upload (needs the fileId from prepareUpload).",
+      "fields": {
+        "file_ids": {
+          "name": "fileId list",
+          "description": "Upload ids to cancel."
+        }
+      }
+    },
+    "copy_to_album": {
+      "name": "Copy to album",
+      "description": "Copy photos from the file space into an album (async task).",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "Which account to operate on when the integration has multiple accounts (alias shown in the panel, or the real account). Empty = primary account. ⚠️ Only album-related services support this field; others always use the primary account."
+        },
+        "paths": {
+          "name": "Source file paths",
+          "description": "Photo paths in the file space."
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "album_name": {
+          "name": "Album name",
+          "description": "Optional, sent along with the request."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        },
+        "fids": {
+          "name": "Source fids",
+          "description": "One per path; resolved automatically when omitted."
+        },
+        "category": {
+          "name": "Source space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "query_files": {
+      "name": "Query files",
+      "description": "List recent/all/directory files (read-only)."
+    },
+    "file_detail": {
+      "name": "File detail",
+      "description": "Query file/folder details (device parameters not fully solved, may return empty).",
+      "fields": {
+        "path": {
+          "name": "Path",
+          "description": "e.g. /file/."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "photo_info": {
+      "name": "Photo metadata",
+      "description": "Resolve album photo fileIds into full metadata (including the hdcFilePath original).",
+      "fields": {
+        "file_ids": {
+          "name": "Photo fileId list",
+          "description": "Gallery-domain file ids."
+        }
+      }
+    },
+    "search_files": {
+      "name": "Search files",
+      "description": "Search the file space by keyword (parameters found by exhaustive probing: query + limit/offset).",
+      "fields": {
+        "keyword": {
+          "name": "Keyword",
+          "description": "Text to search for."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of results."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
+        }
+      }
+    },
+    "list_recycle": {
+      "name": "List recycle bin",
+      "description": "List recycle bin entries (their rid is used by recover_recycle). | 【tested】works",
+      "fields": {
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of entries."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
+        }
+      }
+    },
+    "recover_recycle": {
+      "name": "Recover from recycle bin",
+      "description": "Restore an entry from the recycle bin (pass rid, or paths/names to match automatically).",
+      "fields": {
+        "rid": {
+          "name": "Recycle bin rid",
+          "description": "From list_recycle."
+        },
+        "name": {
+          "name": "Entry name",
+          "description": "Used together with rid."
+        },
+        "paths": {
+          "name": "Paths",
+          "description": "Match rid by path."
+        },
+        "names": {
+          "name": "Names",
+          "description": "Match rid by name."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        },
+        "item_type": {
+          "name": "Entry type",
+          "description": "4 = folder, 0 = file."
+        }
+      }
+    },
+    "permanent_delete_recycle_items": {
+      "name": "Permanently delete recycle bin items",
+      "description": "Permanently remove items from the recycle bin (⚠️ irreversible). | ⚠️ irreversible: permanent delete; requires confirm (not executed)",
+      "fields": {
+        "confirm": {
+          "name": "Confirmation",
+          "description": "Must be exactly \"PERMANENT_DELETE\", otherwise the call is refused (irreversible)."
+        },
+        "rids": {
+          "name": "Recycle bin rid list",
+          "description": "e.g. [82, 123]; or use paths/names to auto-match."
+        },
+        "rid": {
+          "name": "Single rid",
+          "description": "Delete a single item."
+        },
+        "paths": {
+          "name": "Paths",
+          "description": "Auto-match rids by path from the recycle bin list."
+        },
+        "names": {
+          "name": "Names",
+          "description": "Auto-match rids by name from the recycle bin list."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "empty_recycle": {
+      "name": "Empty recycle bin",
+      "description": "Wipe the entire recycle bin at once (⚠️ all items permanently gone). | ⚠️ irreversible: clears the recycle bin; requires confirm (not executed)",
+      "fields": {
+        "confirm": {
+          "name": "Confirmation",
+          "description": "Must be exactly \"EMPTY_RECYCLE\", otherwise the call is refused (irreversible)."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "delete_media": {
+      "name": "Move media to trash",
+      "description": "Move photos/videos to the recycle bin (recoverable)."
+    },
+    "recover_media": {
+      "name": "Recover media",
+      "description": "Restore photos/videos from the recycle bin."
+    },
+    "task_status": {
+      "name": "Query transfer tasks",
+      "description": "Query the task center: filesvc = file-space tasks, trans = cross-service transfers. | 【tested】works",
+      "fields": {
+        "service": {
+          "name": "Task source",
+          "description": "filesvc / trans / gallery."
+        },
+        "task_types": {
+          "name": "Task types",
+          "description": "Defaults to the captured full ranges (filesvc→400..408)."
+        },
+        "task_category": {
+          "name": "Task category",
+          "description": "Device-side task category, default 2."
+        },
+        "all_tasks": {
+          "name": "All trans tasks",
+          "description": "Uses /trans/getAllTask (no type filter)."
+        }
+      }
+    },
+    "duplicate_scan": {
+      "name": "Duplicate photo scan",
+      "description": "Start or stop duplicate photo scan (never deletes photos)."
+    },
+    "reboot_device": {
+      "name": "Reboot storage device",
+      "description": "⚠️ Interrupts storage service for 1-2 minutes (recoverable); the integration never reboots automatically.",
+      "fields": {
+        "confirm": {
+          "name": "Confirmation",
+          "description": "Must be exactly \"REBOOT\", otherwise the call is refused (irreversible)."
+        }
+      }
+    },
+    "shutdown_device": {
+      "name": "Shutdown device",
+      "description": "Powers off the device completely (irreversible, needs physical reboot. Inferred, not tested)",
+      "fields": {
+        "confirm": {
+          "name": "Confirmation",
+          "description": "Must be exactly \"SHUTDOWN\", otherwise the call is refused (irreversible)."
+        },
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "disk_info": {
+      "name": "Disk diagnostics",
+      "description": "Query disk basic status + SMART health (combined in one response) | 【tested】both endpoints return code=1 on our device; service now reports ok=False",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "raid_status": {
+      "name": "RAID status",
+      "description": "RAID array status. Non-RAID devices return an error | 【tested】returns code=22 on our device (non-RAID), as documented",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "disk_sleep": {
+      "name": "Disk sleep",
+      "description": "Put device disks to sleep (recoverable; wake-up follows device policy)."
+    },
+    "usb_plug_out": {
+      "name": "Eject USB device",
+      "description": "⚠️ Eject USB storage from the device (recoverable, but in-flight file I/O is interrupted)."
+    },
+    "refresh_credentials": {
+      "name": "Refresh device credentials",
+      "description": "Request a new device session from Huawei Cloud (use when the device returns 401 or credentials expire).",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "Leave empty to target the first configured device."
+        }
+      }
+    },
+    "clean_task_records": {
+      "name": "Clean task records",
+      "description": "Clear history entries in the task center (display only; no files are touched).",
+      "fields": {
+        "task_ids": {
+          "name": "Task IDs",
+          "description": "taskId values returned by task_status."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "add_to_album": {
+      "name": "Add to album",
+      "description": "Add existing photos to an album (gallery fileIds, not file-space fids; adding twice is idempotent).",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "Which account to operate on when the integration has multiple accounts (alias shown in the panel, or the real account). Empty = primary account. ⚠️ Only album-related services support this field; others always use the primary account."
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "file_ids": {
+          "name": "Photo fileIds",
+          "description": "Gallery-domain photo ids."
+        },
+        "album_name": {
+          "name": "Album name",
+          "description": "Optional, sent with the request."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        }
+      }
+    },
+    "get_task": {
+      "name": "Get single task",
+      "description": "Look up one task by its taskId (complements the bulk task_status query).",
+      "fields": {
+        "task_id": {
+          "name": "Task ID",
+          "description": "taskId returned by task_status."
+        },
+        "service": {
+          "name": "Task source",
+          "description": "filesvc or trans."
+        },
+        "category": {
+          "name": "Space",
+          "description": "user = My Files; public = Shared."
+        }
+      }
+    },
+    "album_info": {
+      "name": "Album detail",
+      "description": "Metadata and cover image paths for one album (fallback when the album list has no cover). | 【tested】works",
+      "fields": {
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        }
+      }
+    },
+    "album_changes": {
+      "name": "Album changes",
+      "description": "Album increment table: which albums changed (read-only).",
+      "fields": {
+        "pre_id": {
+          "name": "Cursor",
+          "description": "Start of the increment page."
+        },
+        "num": {
+          "name": "Limit",
+          "description": "Maximum entries to return."
+        }
+      }
+    },
+    "share_to_person": {
+      "name": "Share to person",
+      "description": "Share photos to a person album (ownerId is a device user id). | 【note】needs receiver_user_id(s); not executed (it would change device data)",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "Which account to operate on when the integration has multiple accounts (alias shown in the panel, or the real account). Empty = primary account. ⚠️ Only album-related services support this field; others always use the primary account."
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "owner_id": {
+          "name": "Person ownerId",
+          "description": "Device user id."
+        },
+        "file_ids": {
+          "name": "Photo fileIds",
+          "description": "Gallery-domain photo ids."
+        },
+        "album_name": {
+          "name": "Album name",
+          "description": "Optional, sent with the request."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        },
+        "file_names": {
+          "name": "File names",
+          "description": "One per file_id; may be omitted."
+        }
+      }
+    },
+    "list_albums": {
+      "name": "List albums",
+      "description": "List albums. Note album_type=0 excludes type=6 (user/shared albums).",
+      "fields": {
+        "album_type": {
+          "name": "Album type",
+          "description": "0 = smart albums; 6 = user/shared albums."
+        }
+      }
+    },
+    "add_album": {
+      "name": "Create album",
+      "description": "Create a new album (inferred implementation, not tested) | ⚠️ reverse-engineered, not verified on a real device; it **creates an album** (not executed)",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "Which account to operate on when the integration has multiple accounts (alias shown in the panel, or the real account). Empty = primary account. ⚠️ Only album-related services support this field; others always use the primary account."
+        },
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "name": {
+          "name": "Album name",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "0=system, 6=shared"
+        }
+      }
+    },
+    "del_album": {
+      "name": "Delete album",
+      "description": "⚠️ Delete an album (irreversible! Inferred, not tested) | ⚠️ reverse-engineered, not verified; it **deletes an album** (not executed)",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "Which account to operate on when the integration has multiple accounts (alias shown in the panel, or the real account). Empty = primary account. ⚠️ Only album-related services support this field; others always use the primary account."
+        },
+        "confirm": {
+          "name": "Confirm",
+          "description": "Must be exactly DELETE_ALBUM, otherwise the call is rejected (deletes the album itself; irreversible, no undo)."
+        },
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "0=system, 6=shared"
+        }
+      }
+    },
+    "search_album_photos": {
+      "name": "Search album photos",
+      "description": "Search photos in an album by keyword (inferred, not tested) | 【tested】/gallery/search returns code=1 on our device — not usable yet",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "keyword": {
+          "name": "Keyword",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "0=系统, 6=共享"
+        },
+        "num": {
+          "name": "Count per page",
+          "description": ""
+        },
+        "page": {
+          "name": "Page number",
+          "description": ""
+        }
+      }
+    },
+    "rename_media": {
+      "name": "Rename media",
+      "description": "Rename a photo or video file (inferred, not tested) | 【tested】/gallery/modifyFileAttr returns code=30104 on our device",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "file_id": {
+          "name": "File ID",
+          "description": "Single file"
+        },
+        "file_ids": {
+          "name": "File IDs",
+          "description": "Multiple files"
+        },
+        "new_name": {
+          "name": "New name",
+          "description": "Required"
+        }
+      }
+    },
+    "remove_album_members": {
+      "name": "Remove album members",
+      "description": "Remove photos/videos from an album (files not deleted. Inferred, not tested) | 【tested】/gallery/delAlbumMemb returns code=30110 on our device",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": ""
+        },
+        "file_id": {
+          "name": "File ID",
+          "description": "Single file"
+        },
+        "file_ids": {
+          "name": "File IDs",
+          "description": "Multiple files"
+        }
+      }
+    },
+    "hide_albums": {
+      "name": "Hide/show albums",
+      "description": "Hide albums (visible in App's hidden albums section) or show them (inferred, not tested) | 【tested】/gallery/modifyAlbumsHiddenStatus returns code=30102 on our device",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "album_ids": {
+          "name": "Album IDs",
+          "description": ""
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": ""
+        },
+        "hidden": {
+          "name": "Hidden",
+          "description": "true=隐藏, false=显示"
+        }
+      }
+    },
+    "list_all_albums": {
+      "name": "List all albums",
+      "description": "Includes hidden albums, system albums, recommended albums (more complete than list_albums. Inferred, not tested) | 【tested】works",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "merge_face_albums": {
+      "name": "Merge face albums",
+      "description": "Merge multiple face albums into target (only for users with face albums. Inferred, not tested) | ⚠️ reverse-engineered, not verified; it **merges face albums** (not executed)",
+      "fields": {
+        "confirm": {
+          "name": "Confirm",
+          "description": "Must be exactly MERGE_FACE_ALBUMS, otherwise the call is rejected (source albums are merged into the target and cannot be split back)."
+        },
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "target_album_id": {
+          "name": "Target album ID",
+          "description": "Required"
+        },
+        "source_album_id": {
+          "name": "Source album ID",
+          "description": ""
+        },
+        "source_album_ids": {
+          "name": "Source album IDs",
+          "description": ""
+        }
+      }
+    },
+    "recent_files": {
+      "name": "Recent files",
+      "description": "Recently accessed/modified files on the device | 【tested】works",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "limit": {
+          "name": "Limit",
+          "description": ""
+        }
+      }
+    },
+    "installed_plugins": {
+      "name": "Installed plugins",
+      "description": "List of plugins installed on the device (acelite API) | 【tested】works",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "all_trans_tasks": {
+      "name": "All transfer tasks",
+      "description": "All transfer tasks on the device (move/copy/upload, trans domain) | 【tested】works",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    },
+    "album_photos": {
+      "name": "Album photos",
+      "description": "List photos in an album (with paths and thumbnails), cursor paging supported. | 【tested】works",
+      "fields": {
+        "album_id": {
+          "name": "Album ID",
+          "description": "Target album id."
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "User/shared albums are 6."
+        },
+        "num": {
+          "name": "Page size",
+          "description": "Maximum photos to return."
+        },
+        "last_cre_time": {
+          "name": "Cursor",
+          "description": "0 for the first page; use lastCreTime for the next."
+        },
+        "last_row_id": {
+          "name": "Cursor",
+          "description": "0 for the first page; use lastRowId for the next."
+        }
+      }
+    },
+    "list_trash": {
+      "name": "Recently deleted",
+      "description": "Query the recycle bin (returns full metadata including original paths).",
+      "fields": {
+        "num": {
+          "name": "Limit",
+          "description": "Maximum entries to return."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
+        }
+      }
+    },
+    "duplicate_scan_result": {
+      "name": "Duplicate scan result",
+      "description": "Query duplicate photo scan results (run duplicate_scan start first).",
+      "fields": {
+        "task_id": {
+          "name": "Task ID",
+          "description": "Scan task id."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum groups to return."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "For paging."
+        },
+        "filter": {
+          "name": "Filter",
+          "description": "Device-side filter."
+        }
+      }
+    },
+    "device_diagnostics": {
+      "name": "Device diagnostics",
+      "description": "Fetch device error code, repair mode and Samba share status in one call (troubleshooting). | 【tested】works"
+    },
+    "photos_table_full": {
+      "name": "Full photo table (paged)",
+      "description": "Pull the full photo info table (500 rows/page) for first load or cache rebuild. Pass lastRowId as row_id for the next page; count=0 means the end. NOTE: returns code=30102 on our device — endpoint exists but the device requires more, not usable yet."
+    },
+    "plugin_install": {
+      "name": "Install plugin",
+      "description": "Install a lightweight app from the marketplace. Only app_id is required."
+    },
+    "plugin_uninstall": {
+      "name": "Uninstall / cancel / pause plugin",
+      "description": "Uninstall, cancel download, or pause an installed plugin."
+    },
+    "plugin_market": {
+      "name": "Plugin marketplace",
+      "description": "List installable plugins from the marketplace. Read-only."
+    },
+    "plugin_all": {
+      "name": "Plugins: market + installed",
+      "description": "Merged view of installable and installed plugins. Read-only."
+    },
+    "plugin_xunlei": {
+      "name": "Xunlei plugin info",
+      "description": "Xunlei plugin status. Read-only."
+    },
+    "dynamic_info": {
+      "name": "Dynamic / memories",
+      "description": "Fetch the App home \"dynamic / memories / timeline\" feed. Read-only."
+    },
+    "retry_task": {
+      "name": "Retry transfer task",
+      "description": "Retry a failed transfer task (upload/download/sync)."
+    },
+    "share_files_to_person": {
+      "name": "Share files to a person",
+      "description": "Share specific photos to device users by file id. Adds device data."
+    },
+    "album_rename": {
+      "name": "Rename album",
+      "description": "Rename an album (the album itself, not a photo). Verified: POST /gallery/albumCfg with the new albumName.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "new_name": {
+          "name": "New name",
+          "description": "Required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "Defaults to 6 (shared album)"
+        }
+      }
+    },
+    "album_set_cover": {
+      "name": "Set album cover",
+      "description": "Set a photo as the album cover. Verified: POST /gallery/albumCfg with coverId only.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        },
+        "album_id": {
+          "name": "Album ID",
+          "description": "Required"
+        },
+        "cover_id": {
+          "name": "Cover photo ID",
+          "description": "Gallery-domain fileId, required"
+        },
+        "album_type": {
+          "name": "Album type",
+          "description": "Defaults to 6 (shared album)"
+        }
+      }
+    },
+    "device_users": {
+      "name": "Device family members",
+      "description": "List administrators and members on the device (nickname / level / used space).",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": ""
+        }
+      }
+    }
+  },
+  "common": {
+    "title": "Home Storage",
+    "empty": "No device configured yet.",
+    "refresh": "Refresh credentials",
+    "refreshing": "Refreshing…",
+    "open_media": "Open media browser",
+    "photos": "Photos",
+    "videos": "Videos",
+    "user_albums": "User albums",
+    "face_albums": "People",
+    "scene_albums": "Scenes",
+    "place_albums": "Places",
+    "trash": "Recently deleted",
+    "disk_total": "Disk total",
+    "disk_used": "Disk used",
+    "disk_free": "Disk free",
+    "disk_usage": "Usage",
+    "usb": "USB",
+    "users": "Device users",
+    "model": "Model",
+    "serial": "Serial",
+    "mac": "MAC",
+    "lan": "LAN address",
+    "tunnel": "Session tunnel",
+    "account_login": "Huawei account {account} (password login)",
+    "device_code_login": "Device code authorization",
+    "session_at": "Session obtained at"
+  }
+}

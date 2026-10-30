@@ -1,0 +1,1463 @@
+# 华为家庭存储服务定义（HA 界面里的中文名/说明/选择器）
+#
+# ⚠️ 文件空间有两个**独立**空间：category=user（「我的文件」）与
+#    category=public（「共享」）。写操作默认落在 public（与客户端「共享」一致）。
+# ⚠️ 删除类默认走**回收站**（可逆）；只有 permanent: true 才彻底删除。
+
+# ---------------------------------------------------------------------------
+# 设备 / 账号运维
+# ---------------------------------------------------------------------------
+refresh_credentials:
+  name: 刷新设备凭据
+  description: 强制重新申请设备会话凭据（设备报 401 或凭据过期时用）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      description: 留空则用第一个可用条目
+      required: false
+      example: "3f2b9c1e4d5a"
+      selector:
+        text:
+
+duplicate_scan:
+  name: 重复照片扫描
+  description: 启动或停止重复照片扫描（不会删除照片）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    act:
+      name: 动作
+      required: true
+      example: start
+      selector:
+        select:
+          options: [start, stop]
+
+reboot_device:
+  name: 重启存储设备
+  description: ⚠️ 会中断存储服务约 1-2 分钟（可恢复）。集成永不自动重启
+  fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "REBOOT"（大小写敏感）才会执行。设备重启，服务中断约 1-2 分钟。
+      example: "REBOOT"
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+# --- 新增：关机（不可逆）---
+shutdown_device:
+  name: 关机
+  description: ⚠️ 彻底关机设备（不可逆，需物理按键重启。逆向推断未实机验证）
+  fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "SHUTDOWN"（大小写敏感）才会执行。设备彻底关机，需物理按键重启。
+      example: "SHUTDOWN"
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+# --- 新增：磁盘诊断 ---
+disk_info:
+  name: 磁盘诊断
+  description: 查询磁盘基础状态 + SMART 健康（两个端点合在一个响应里。非 RAID 设备的 RAID 字段会返回 error）｜【实测】本机两个端点均返回 code=1，服务如实报 ok=False；设备可能未实现
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+# --- 新增：RAID 状态 ---
+raid_status:
+  name: RAID 状态
+  description: RAID 阵列状态。非 RAID 设备会返回 error（RAID 不是标配）｜【实测】本机返回 code=22（非 RAID 设备），符合"RAID 不是标配"的说明
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+
+disk_sleep:
+  name: 磁盘休眠
+  description: 让设备磁盘进入休眠（可恢复，唤醒由设备策略决定）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+usb_plug_out:
+  name: 弹出 USB 设备
+  description: ⚠️ 弹出设备上的 USB 存储（可恢复，但正在读写的文件会中断）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+# ---------------------------------------------------------------------------
+# 只读查询
+# ---------------------------------------------------------------------------
+query_files:
+  name: 查询文件
+  description: 列出最近/全部/指定目录/相册照片（只读）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    source:
+      name: 数据源
+      required: false
+      example: recent
+      selector:
+        select:
+          options: [recent, all, dir, photos]
+    dir_path:
+      name: 目录路径
+      description: source=dir 时生效，需带尾斜杠
+      required: false
+      example: /file/
+      selector: {text: {}}
+    category:
+      name: 空间
+      description: user=我的文件，public=共享
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    limit:
+      name: 条数上限
+      required: false
+      example: 20
+      selector:
+        number: {min: 1, max: 200}
+
+file_detail:
+  name: 文件详情
+  description: 查询文件/目录详情（设备参数未完全解出，可能返回空）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    path:
+      name: 路径
+      required: true
+      example: /file/测试/
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+search_files:
+  name: 搜索文件
+  description: 按关键字搜索文件空间（参数由穷举实测得出：query + limit/offset）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    keyword:
+      name: 关键字
+      required: true
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    limit:
+      name: 条数
+      required: false
+      default: 20
+      selector: {number: {min: 1, max: 200}}
+    offset:
+      name: 偏移
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+task_status:
+  name: 查询传输任务
+  description: 查任务中心（filesvc=文件空间任务，trans=跨服务传输任务）｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    service:
+      name: 任务来源
+      required: false
+      selector:
+        select:
+          options: [filesvc, trans, gallery]
+    task_types:
+      name: 任务类型
+      description: 留空用抓包实据的整段（filesvc→400..408；trans→100..105,200..202；gallery→300..305）
+      required: false
+      selector: {text: {}}
+    task_category:
+      name: 任务分类
+      required: false
+      selector: {number: {min: 0, max: 99}}
+    all_tasks:
+      name: 取 trans 全表
+      description: 走 /trans/getAllTask（不带 taskTypes 筛选）
+      required: false
+      default: false
+      selector: {boolean: {}}
+
+plugin_install:
+  name: 安装插件
+  description: >-
+    从应用市场安装轻应用（/acelite/hap_add）。只需给 app_id，其余字段
+    （pkgName/downloadURL/iconURL/versionCode…）自动从市场列表补齐。
+    安装可能在设备侧异步下载，可用 plugin_all 观察 installedHap 变化。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    app_id:
+      name: 应用 ID
+      description: 见 plugin_market 返回的 allList[].appId（与 download_url 二选一）
+      required: false
+      example: C979782581979458432
+      selector: {text: {}}
+    download_url:
+      name: 自定义包地址
+      description: 给了它就绕过市场，直接按此 URL 安装（需同时填 pkg_name）
+      required: false
+      selector: {text: {}}
+    pkg_name:
+      name: 包名
+      description: 自定义来源时必填，如 com.example.app
+      required: false
+      selector: {text: {}}
+    name:
+      name: 显示名
+      required: false
+      selector: {text: {}}
+    icon_url:
+      name: 图标地址
+      required: false
+      selector: {text: {}}
+    ui_url:
+      name: 界面地址
+      required: false
+      selector: {text: {}}
+    version_code:
+      name: 版本号（整数）
+      required: false
+      selector: {number: {mode: box, min: 0}}
+    version_name:
+      name: 版本名
+      required: false
+      selector: {text: {}}
+
+plugin_uninstall:
+  name: 卸载/取消/暂停插件
+  description: >-
+    对已装插件执行删除、取消下载或暂停（/acelite/hap_delete、hap_cancel、
+    hap_pause 三者请求体相同，按 action 分派）。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    app_id:
+      name: 应用 ID
+      required: true
+      selector: {text: {}}
+    pkg_name:
+      name: 包名
+      description: 见 plugin_all 返回的 installedHap[].pkgName
+      required: true
+      example: com.ionewu.owdl
+      selector: {text: {}}
+    action:
+      name: 操作
+      required: false
+      default: delete
+      selector:
+        select:
+          options: [delete, cancel, pause]
+
+plugin_market:
+  name: 插件市场列表
+  description: >-
+    列出应用市场里可安装的轻应用/插件（/acelite/market_infos）。只读。
+    返回项含 appId / name / pkgName / downloadURL / versionCode 等，
+    可直接作为 plugin_install 的入参。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+plugin_all:
+  name: 插件市场+已装
+  description: 市场与已安装的合并视图（/acelite/all_infos）。只读。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+plugin_xunlei:
+  name: 迅雷插件信息
+  description: 迅雷插件状态（/acelite/xunlei_infos）。只读。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+dynamic_info:
+  name: 动态 / 时光轴
+  description: >-
+    拉取 App 首页的「动态 / 回忆 / 时光轴」（/gallery/getDynamicInfo）。只读。
+    data_type 是动态类型枚举（默认 0）；不确定时用 probe=true 一次性试 0~9，
+    看哪个值有数据。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    owner_id:
+      name: 用户 ID
+      description: 留空/0 表示当前账号
+      required: false
+      default: 0
+      selector: {number: {mode: box, min: 0}}
+    data_type:
+      name: 动态类型
+      description: 插件里由 setDataType() 决定，默认 0
+      required: false
+      default: 0
+      selector: {number: {mode: box, min: 0, max: 20}}
+    probe:
+      name: 探测模式
+      description: 勾选后一次性尝试 dataType 0~9（只读，安全）
+      required: false
+      default: false
+      selector: {boolean: {}}
+
+retry_task:
+  name: 重试传输任务
+  description: >-
+    重试任务中心里失败的任务（上传/下载/同步）。task_id 与 task_type 从
+    task_status 返回的列表里取；business 是任务所属域，与 task_status 的
+    service 字段同一组取值。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    task_id:
+      name: 任务 ID
+      description: 从 task_status 返回的 taskId
+      required: true
+      example: 123
+      selector: {number: {mode: box, min: 0}}
+    task_type:
+      name: 任务类型
+      description: 从 task_status 返回的 taskType（如 400/401/402…）
+      required: true
+      example: 400
+      selector: {number: {mode: box, min: 0}}
+    business:
+      name: 业务域
+      description: 任务所属域，与 task_status 的 service 一致
+      required: false
+      default: filesvc
+      selector:
+        select:
+          options: [filesvc, gallery, trans, safebox]
+    trans_id:
+      name: 传输 ID（可选）
+      description: 留空则自动从 task_status 里查同一任务的 transId
+      required: false
+      selector: {text: {}}
+
+clean_task_records:
+  name: 清除任务记录
+  description: 清除任务中心的历史记录（只影响任务列表显示，不碰任何文件）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    task_ids:
+      name: 任务 ID 列表
+      description: 从 task_status 返回的 taskId
+      required: true
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+list_albums:
+  name: 列相册
+  description: 列出相册。注意 album_type=0 不含 type=6（用户/共享相册），要全量请传 6
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      description: 0=分类相册；6=用户/共享相册
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+add_album:
+  name: 创建相册
+  description: 新建相册（逆向推断实现，未实机验证）｜⚠️ 逆向推断未实机验证，且会**创建相册**（实测未执行，避免动设备数据）
+  fields:
+    account:
+      name: 账号
+      description: >-
+        多账号时指定操作哪个账号（填面板显示的账号别名或真实账号）。
+        留空 = 主账号。⚠️ 目前只有相册类服务支持该字段，其余服务固定操作主账号。
+      required: false
+      selector: {text: {}}
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    name:
+      name: 相册名
+      required: true
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+
+del_album:
+  name: 删除相册
+  description: ⚠️ 删除相册（不可逆！逆向推断实现，未实机验证）｜⚠️ 逆向推断未实机验证，且会**删除相册**（实测未执行）
+  fields:
+    account:
+      name: 账号
+      description: >-
+        多账号时指定操作哪个账号（填面板显示的账号别名或真实账号）。
+        留空 = 主账号。⚠️ 目前只有相册类服务支持该字段，其余服务固定操作主账号。
+      required: false
+      selector: {text: {}}
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "DELETE_ALBUM"（大小写敏感）才会执行。删的是相册本身，不是把照片挪进回收站——整本相册索引消失，成员共享的那些照片也一起从相册视图里不见，没有 undo。
+      example: "DELETE_ALBUM"
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+
+
+search_album_photos:
+  name: 相册照片搜索
+  description: 按关键词搜索相册内的照片（逆向推断，未实机验证）｜【实测】本机 /gallery/search 返回 code=1，暂不可用（此前标注"未实机验证"）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    keyword:
+      name: 关键词
+      required: true
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+    num:
+      name: 每页数量
+      required: false
+      selector: {number: {min: 1, max: 500}}
+    page:
+      name: 页码
+      required: false
+      selector: {number: {min: 1}}
+
+rename_media:
+  name: 重命名照片/视频
+  description: 修改照片或视频的文件名（逆向推断，未实机验证）｜【实测】本机 /gallery/modifyFileAttr 返回 code=30104，暂不可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_id:
+      name: 单个文件 ID
+      required: false
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 多个文件 ID
+      required: false
+      selector: {text: {}}
+    new_name:
+      name: 新文件名
+      required: true
+      selector: {text: {}}
+
+remove_album_members:
+  name: 从相册移除照片
+  description: 把照片/视频从相册里移出，**原图不删**（仍在「照片」总相册与文件空间）｜【实测 2026-10-30】补上 clientType/deviceId/albumName 后 code=0，真机复核相册张数 2→1
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+    file_id:
+      name: 单个文件 ID
+      required: false
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 多个文件 ID
+      required: false
+      selector: {text: {}}
+    album_name:
+      name: 相册名称
+      required: false
+      selector: {text: {}}
+
+album_rename:
+  name: 相册重命名
+  description: 改相册的名字（相册本身，不是照片）｜【实测 2026-10-30】POST /gallery/albumCfg 带新 albumName，设备侧确认已改名
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    new_name:
+      name: 新名称
+      required: true
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 30}
+
+album_set_cover:
+  name: 设置相册封面
+  description: 把某张照片设为相册封面｜【实测 2026-10-30】POST /gallery/albumCfg 只带 coverId（不能带 albumName），设备侧回查封面已变
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    cover_id:
+      name: 封面照片 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 30}
+    album_name:
+      name: 相册名称
+      required: false
+      selector: {text: {}}
+
+device_users:
+  name: 设备家庭成员
+  description: 列出设备上的管理员与成员（昵称 / 等级 / 已用空间）｜用于「共享给家人」挑 ownerId｜【实测 2026-10-30】返回 2 个成员（10001 管理员 / 10002 成员）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+hide_albums:
+  name: 隐藏/显示相册
+  description: 隐藏相册或恢复显示｜⚠️【实测 2026-10-30 复核】设备返回 code 0 但回查 hiddenStatus 不变，属「假成功」，面板未暴露该入口
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 单个相册 ID
+      required: false
+      selector: {number: {min: 0}}
+    album_ids:
+      name: 多个相册 ID
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      selector:
+        number: {min: 0, max: 10}
+    hidden:
+      name: 隐藏
+      required: false
+      selector: {boolean: {}}
+
+list_all_albums:
+  name: 列出全部相册
+  description: 含隐藏相册、系统相册、推荐相册（比 list_albums 全。逆向推断，未实机验证）｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+merge_face_albums:
+  name: 合并人脸相册
+  description: 把多个人脸相册合并到目标相册（有人脸相册的用户才需要。逆向推断，未实机验证）｜⚠️ 逆向推断未实机验证，且会**合并人物相册**（实测未执行）
+  fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "MERGE_FACE_ALBUMS"（大小写敏感）才会执行。源相册会并进目标相册后消失，设备不提供拆分接口——把两个人的脸合到一起后只能手工重建相册才能分开。
+      example: "MERGE_FACE_ALBUMS"
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    target_album_id:
+      name: 目标相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    source_album_id:
+      name: 单个源相册 ID
+      required: false
+      selector: {number: {min: 0}}
+    source_album_ids:
+      name: 多个源相册 ID
+      required: false
+      selector: {text: {}}
+
+recent_files:
+  name: 最近文件
+  description: 设备侧最近访问/修改的文件列表｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    limit:
+      name: 数量上限
+      required: false
+      selector: {number: {min: 1, max: 500}}
+installed_plugins:
+  name: 已装插件
+  description: 家庭存储设备上已安装的插件列表｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+all_trans_tasks:
+  name: 全量传输任务
+  description: 设备上所有传输任务（move/copy/upload 等）｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+
+album_photos:
+  name: 相册照片
+  description: 列出相册内的照片（含路径与缩略图），支持游标分页｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+    num:
+      name: 每页条数
+      required: false
+      default: 500
+      selector: {number: {min: 1, max: 500}}
+    last_cre_time:
+      name: 分页游标（创建时间）
+      description: 首页传 0；下一页用上一页返回的 lastCreTime
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+    last_row_id:
+      name: 分页游标（行号）
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+list_trash:
+  name: 最近删除
+  description: 回收站查询（返回完整元数据，含原图路径）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    num:
+      name: 条数
+      required: false
+      default: 100
+      selector: {number: {min: 1, max: 500}}
+    offset:
+      name: 偏移
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+duplicate_scan_result:
+  name: 重复照片结果
+  description: 查询重复照片扫描的结果（需先调用 duplicate_scan 的 start）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    task_id:
+      name: 任务 ID
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+    limit:
+      name: 条数
+      required: false
+      default: 20
+      selector: {number: {min: 1, max: 200}}
+    offset:
+      name: 偏移
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+    filter:
+      name: 过滤
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+
+device_diagnostics:
+  name: 设备诊断
+  description: 一次性取回设备错误码、维修模式、Samba 共享状态（排障用）｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+
+get_task:
+  name: 查单个任务
+  description: 按 taskId 精确查一个任务的详情（与 task_status 的批量查询互补）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    task_id:
+      name: 任务 ID
+      required: true
+      selector: {number: {min: 0}}
+    service:
+      name: 任务来源
+      required: false
+      selector:
+        select:
+          options: [filesvc, trans]
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+album_info:
+  name: 相册详情
+  description: 单个相册的元数据与封面原图路径（相册列表里 coverInfo 为空时的兜底）｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_type:
+      name: 相册类型
+      description: 用户/共享相册为 6
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+
+album_changes:
+  name: 相册变动
+  description: 相册增量表：哪些相册有变动（只读）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    pre_id:
+      name: 起始游标
+      required: false
+      default: 0
+      selector: {number: {min: 0}}
+    num:
+      name: 条数
+      required: false
+      default: 500
+      selector: {number: {min: 1, max: 500}}
+
+share_to_person:
+  name: 共享到人物
+  description: 把照片共享到人物相册（ownerId 用设备用户 id）｜未做真实分享验证（会改设备数据）。按文件分享请用 share_files_to_person
+  fields:
+    account:
+      name: 账号
+      description: >-
+        多账号时指定操作哪个账号（填面板显示的账号别名或真实账号）。
+        留空 = 主账号。⚠️ 目前只有相册类服务支持该字段，其余服务固定操作主账号。
+      required: false
+      selector: {text: {}}
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    owner_id:
+      name: 人物 ownerId
+      description: 设备用户 id，可从诊断或设备用户列表取
+      required: true
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 照片 fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
+    album_name:
+      name: 相册名称
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+    file_names:
+      name: 文件名列表
+      description: 与 file_ids 一一对应，可留空
+      required: false
+      selector:
+        text: {multiple: true}
+
+add_to_album:
+  name: 加入相册
+  description: 把已有的照片加进相册（用相册域 fileId，不是文件空间的 fid；重复添加是幂等的）
+  fields:
+    account:
+      name: 账号
+      description: >-
+        多账号时指定操作哪个账号（填面板显示的账号别名或真实账号）。
+        留空 = 主账号。⚠️ 目前只有相册类服务支持该字段，其余服务固定操作主账号。
+      required: false
+      selector: {text: {}}
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 照片 fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
+    album_name:
+      name: 相册名称
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      description: 用户/共享相册为 6
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+
+photo_info:
+  name: 照片元数据
+  description: 把相册照片的 fileId 换成完整元数据（含 hdcFilePath 原图路径）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_ids:
+      name: 照片 fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
+
+list_recycle:
+  name: 列回收站
+  description: 列出回收站条目（返回的 rid 供 recover_recycle 使用）｜【实测】可用
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    limit:
+      name: 条数上限
+      required: false
+      selector: {number: {min: 1, max: 500}}
+    offset:
+      name: 偏移
+      required: false
+      selector: {number: {min: 0}}
+
+# ---------------------------------------------------------------------------
+# 文件空间写入（NAS 操作）
+# ---------------------------------------------------------------------------
+create_folder:
+  name: 新建目录
+  description: 在文件空间新建目录（可给 path 单个，或 paths 批多个；重名会报错而不是改名）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    path:
+      name: 目录路径
+      description: 单个目录，需带尾斜杠
+      required: false
+      example: /file/备份/
+      selector: {text: {}}
+    paths:
+      name: 目录路径（批量）
+      description: 与 path 二选一或同给；设备侧批量接口参数未解出，这里是逐个建
+      required: false
+      example: "['/file/备份/', '/file/归档/']"
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+rename_path:
+  name: 重命名
+  description: 重命名文件/目录（目录带尾斜杠，文件不带）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    old_path:
+      name: 原路径
+      required: true
+      example: /file/备份/
+      selector: {text: {}}
+    new_path:
+      name: 新路径
+      required: true
+      example: /file/备份_2026/
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    file_id:
+      name: 条目 id
+      description: 留空则自动列父目录解析（多一次请求）
+      required: false
+      selector: {text: {}}
+
+move_paths:
+  name: 移动文件/目录
+  description: 把若干文件/目录移动到一个目标目录（异步任务）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 源路径
+      description: 目录需带尾斜杠
+      required: true
+      example: "['/file/备份/']"
+      selector:
+        text: {multiple: true}
+    dest_dir:
+      name: 目标目录
+      required: true
+      example: /file/归档/
+      selector: {text: {}}
+    category:
+      name: 源空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    dest_category:
+      name: 目标空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+copy_paths:
+  name: 复制文件/目录
+  description: 把若干文件/目录复制到一个目标目录（同空间，异步任务；目标目录需已存在）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 源路径
+      description: 目录需带尾斜杠
+      required: true
+      example: "['/file/源目录/']"
+      selector:
+        text: {multiple: true}
+    dest_dir:
+      name: 目标目录
+      required: true
+      example: /file/目标目录/
+      selector: {text: {}}
+    category:
+      name: 源空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    dest_category:
+      name: 目标空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+delete_paths:
+  name: 删除文件/目录
+  description: 删除文件空间的文件/目录 —— 默认移入回收站（可逆）；skip_recycle=true 永久删除（不可逆，逆向推导待实机验证）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    confirm:
+      name: 确认（仅永久删除时需要）
+      required: false
+      selector: {text: {}}
+      description: >-
+        skip_recycle=true 时必填，且必须完全等于 "PERMANENT_DELETE"。进回收站（默认）时不需要。
+      example: "PERMANENT_DELETE"
+    paths:
+      name: 路径
+      description: 目录需带尾斜杠
+      required: true
+      example: "['/file/临时/']"
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    skip_recycle:
+      name: 跳过回收站（永久删除）
+      description: true=直接永久删除不进回收站（⚠️ 不可逆）
+      required: false
+      selector: {boolean: {}}
+
+upload_file:
+  name: 上传文件
+  description: 把文本或 HA 主机上的文件上传到设备文件空间
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    dest_path:
+      name: 目标路径
+      required: true
+      example: /file/备份/ha.txt
+      selector: {text: {}}
+    content:
+      name: 文本内容
+      description: 与 local_path 二选一（文本走这里）
+      required: false
+      selector: {text: {multiline: true}}
+    local_path:
+      name: 本地文件路径
+      description: HA 主机上的路径（容器内常见可读路径为 /config 下）
+      required: false
+      example: /config/backup.tar
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+download_file:
+  name: 下载文件
+  description: 从设备文件空间流式下载文件到 HA 主机（限写 uploads 目录）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    path:
+      name: 设备路径
+      required: true
+      example: /file/备份/ha.txt
+      selector: {text: {}}
+    local_path:
+      name: 本地目标路径
+      description: HA 主机上的路径，限定在 /config/uploads 下（给目录时自动取设备路径的文件名）
+      required: true
+      example: /config/uploads/ha.txt
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+cancel_upload:
+  name: 取消上传
+  description: 取消进行中的上传（需 prepareUpload 返回的 fileId）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_ids:
+      name: fileId 列表
+      required: true
+      selector:
+        text: {multiple: true}
+
+copy_to_album:
+  name: 复制到相册
+  description: 把文件空间里的照片复制进相册（异步任务）
+  fields:
+    account:
+      name: 账号
+      description: >-
+        多账号时指定操作哪个账号（填面板显示的账号别名或真实账号）。
+        留空 = 主账号。⚠️ 目前只有相册类服务支持该字段，其余服务固定操作主账号。
+      required: false
+      selector: {text: {}}
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 源文件路径
+      required: true
+      selector:
+        text: {multiple: true}
+    album_id:
+      name: 相册 ID
+      required: true
+      selector: {number: {min: 0}}
+    album_name:
+      name: 相册名称
+      required: false
+      selector: {text: {}}
+    album_type:
+      name: 相册类型
+      description: 用户/共享相册为 6
+      required: false
+      default: 6
+      selector: {number: {min: 0}}
+    fids:
+      name: 源文件 fid
+      description: 与 paths 一一对应；留空则自动解析
+      required: false
+      selector:
+        text: {multiple: true}
+    category:
+      name: 源空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+recover_recycle:
+  name: 回收站恢复
+  description: 从回收站恢复条目（可直接给 rid，或给路径/名字自动匹配）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    rid:
+      name: 回收站条目 rid
+      required: false
+      selector: {text: {}}
+    name:
+      name: 条目名
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 路径
+      required: false
+      selector:
+        text: {multiple: true}
+    names:
+      name: 名字列表
+      required: false
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+    item_type:
+      name: 条目类型
+      description: 4=目录，0=文件（自动匹配时以回收站返回为准）
+      required: false
+      default: 4
+      selector: {number: {min: 0, max: 8}}
+
+permanent_delete_recycle_items:
+  name: 永久删除回收站条目
+  description: 把回收站里的条目永久删掉（⚠️ 不可逆！逆向推导待实机验证）｜⚠️ 不可逆：永久删除；需 confirm 确认（实测未执行）
+  fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "PERMANENT_DELETE"（大小写敏感）才会执行。回收站条目永久删除。
+      example: "PERMANENT_DELETE"
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    rids:
+      name: 回收站 rid 列表
+      description: 直接给 rid（数字或字符串），或用 paths/names 自动匹配
+      required: false
+      example: '[82, 123]'
+      selector:
+        text: {multiple: true}
+    rid:
+      name: 单个 rid
+      required: false
+      selector: {text: {}}
+    paths:
+      name: 路径
+      description: 从回收站列表按路径匹配
+      required: false
+      selector:
+        text: {multiple: true}
+    names:
+      name: 名字列表
+      description: 从回收站列表按名字匹配
+      required: false
+      selector:
+        text: {multiple: true}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+empty_recycle:
+  name: 清空回收站
+  description: 一键清空整个回收站（⚠️ 所有条目永久消失！逆向推导待实机验证）｜⚠️ 不可逆：清空回收站；需 confirm 确认（实测未执行）
+  fields:
+    confirm:
+      required: true
+      selector:
+        text:
+      description: >-
+        不可逆操作的安全确认：必须完全等于 "EMPTY_RECYCLE"（大小写敏感）才会执行。清空回收站，所有条目永久消失。
+      example: "EMPTY_RECYCLE"
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    category:
+      name: 空间
+      required: false
+      selector:
+        select:
+          options: [user, public]
+
+# ---------------------------------------------------------------------------
+# 相册（照片/视频）
+# ---------------------------------------------------------------------------
+delete_media:
+  name: 移入回收站
+  description: 把照片/视频移入回收站（可恢复，不会永久删除）
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_ids:
+      name: 媒体 fileId 列表
+      required: true
+      example: "281474976710690"
+      selector: {text: {}}
+
+recover_media:
+  name: 恢复媒体
+  description: 从回收站恢复照片/视频
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_ids:
+      name: 媒体 fileId 列表
+      required: true
+      example: "281474976710690"
+      selector: {text: {}}
+
+photos_table_full:
+  name: 全量照片表（分页）
+  description: >-
+    拉取全量照片信息表（一页默认 500 条），用于面板首次加载或本地缓存重建。
+    ⚠️ 实测本机返回 code=30102，设备对该端点有额外要求，暂不可用；保留以记录该能力。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    row_id:
+      name: 起始 rowId（上一页的 lastRowId）
+      required: false
+      default: 0
+      selector: {number: {mode: box, min: 0}}
+    num:
+      name: 每页条数
+      required: false
+      default: 500
+      selector: {number: {mode: box, min: 1, max: 500}}
+
+share_files_to_person:
+  name: 按文件共享到个人
+  description: >-
+    把指定照片按文件分享给设备用户（/gallery/shareToPerson 同步版）。
+    与 share_to_person 不同：后者按相册共享，本服务按文件 + 接收者列表共享。
+    ⚠️ 逆向推断，未实机验证；会改设备数据。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      required: false
+      selector: {text: {}}
+    file_id:
+      name: 单个照片 fileId
+      required: false
+      selector: {number: {min: 0}}
+    file_ids:
+      name: 照片 fileId 列表
+      required: false
+      selector:
+        object: {}
+    receiver_user_id:
+      name: 接收者用户 ID
+      required: false
+      selector: {text: {}}
+    receiver_user_ids:
+      name: 接收者用户 ID 列表
+      required: false
+      selector:
+        object: {}
+    auto_expire_days:
+      name: 自动过期天数
+      description: 0 = 不过期
+      required: false
+      default: 0
+      selector: {number: {min: 0, max: 3650}}

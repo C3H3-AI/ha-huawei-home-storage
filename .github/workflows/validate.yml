@@ -1,0 +1,68 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    name: Hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  workflow-tests:
+    name: Workflow regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 这些测试守的是「不报错的坏」：Release 静默绑成 untagged-<hash> 时
+      # 草稿照建、日志全绿，只有 HACS 用户收不到更新。没有测试的话，
+      # 下一个人删掉 --verify-tag 也不会有人发现。
+      - name: Run release workflow tests
+        run: |
+          python3 -m pip install -q pyyaml
+          python3 -m unittest _tools.test_release_workflow -v
+
+  offline-tests:
+    name: Offline regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 这套测试不装 Home Assistant —— 每个套件自带 stub 或只做静态分析
+      # （AST / JSON / 文件结构），所以几秒跑完、零依赖。
+      #
+      # 它们守的同样是「不报错的坏」：
+      #   * 隔离函数读一个从未被写入的映射 → 永远 return None，
+      #     看起来"已实现"但一次都不执行；
+      #   * 面板把脱敏串当 ?account= 回传 → 后端查不到就静默 fallback
+      #     到主账号，用户看到别人的数据，界面一切正常；
+      #   * 同一个服务名注册两次 → Python 后者覆盖前者，CI 全绿。
+      #
+      # 用 run_all_tests.py 而不是逐个点名：新增套件只要登记进 SUITES 就自动
+      # 被 CI 跑到，不会出现"写了但没人跑"。
+      #
+      # runner 本身也会拒绝三种「零验证」：
+      #   * SUITES 为空 / 过滤条件没匹配到
+      #   * 某套件一个用例都没跑（漏了 unittest.main）
+      #   * 某套件全部用例都被跳过（缺库后整体 skip，退出码仍是 0）
+      #
+      # 「CI 有没有跑这些套件」由 test_integration_structure.CIPipelineTest
+      # 断言（它自己就在这套里跑），所以这里不需要额外一步自检。
+      - name: Run offline suites
+        run: python3 _tools/run_all_tests.py -v

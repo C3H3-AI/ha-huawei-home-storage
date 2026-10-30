@@ -1,0 +1,36 @@
+# 草稿 Release 的 changelog 分类（配合 .github/workflows/release.yml 的 --generate-notes）
+#
+# ⚠️ 这里的 label 必须是仓库里**真实存在**的，否则那些 PR 会全部掉进最后的 `*` 兜底，
+#    分类等于没做。本仓库目前用的是 GitHub 默认 label 集：
+#    accessibility / bug / documentation / duplicate / enhancement /
+#    good first issue / help wanted / invalid / question / wontfix
+#
+# 如果以后引入 `type: feat` / `type: fix` 这类前缀 label，记得同步改这里。
+#
+# ★ 兜底 `*` 必须放最后 —— GitHub 是按顺序匹配的，放前面会吞掉所有分类。
+
+changelog:
+  exclude:
+    labels:
+      - "skip-changelog"
+      - "duplicate"
+      - "invalid"
+      - "question"
+      - "wontfix"
+  categories:
+    - title: "✨ Features / 新功能"
+      labels:
+        - "enhancement"
+    - title: "🐛 Bug Fixes / 问题修复"
+      labels:
+        - "bug"
+    - title: "♿ Accessibility / 无障碍"
+      labels:
+        - "accessibility"
+    - title: "📝 Documentation / 文档"
+      labels:
+        - "documentation"
+    # ★ 兜底放最后
+    - title: "Other Changes / 其他"
+      labels:
+        - "*"
