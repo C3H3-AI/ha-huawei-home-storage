@@ -992,7 +992,8 @@ class HuaweiStorageUploadView(HomeAssistantView):
     async def post(self, request: web.Request, entry_id: str) -> web.Response:
         runtime = _runtime_of(request, entry_id)
         dest = (request.query.get("path") or "").strip()
-        if not dest:
+        # 相册直传不需要 path（设备侧 path 传空串），只有文件空间上传才要
+        if not dest and not (request.query.get("album_id") or "").strip():
             return web.json_response({"error": "缺少 path"}, status=400)
         total = request.content_length
         if not total:
@@ -1007,6 +1008,57 @@ class HuaweiStorageUploadView(HomeAssistantView):
         if denied is not None:
             return denied
         client = _client_of(runtime, account)
+
+        # ── 相册直传（2026-10-30 抓包对齐 PC 客户端）─────────────────────────
+        # 带 album_id 时走**相册域**：/gallery/prepareUpload → /upload?service=gallery
+        # → /gallery/addAlbumMemb，全程不碰文件空间。
+        # 这一步的 fileId 是 281… 开头（相册域），可直接喂 addAlbumMemb；
+        # 旧做法（先传 /file/ 再 copy_to_album）要多一次跨域复制任务。
+        album_id_raw = (request.query.get("album_id") or "").strip()
+        if album_id_raw:
+            name = (request.query.get("name") or "").strip() or "photo"
+            # path 只用来给 upload_stream 取文件名（相册域报文里 path 传空串）
+            try:
+                res = await upload_stream(
+                    client,
+                    f"/{name}",
+                    total,
+                    request.content.iter_chunked(1024 * 1024),
+                    device_id=_device_id_of(runtime),
+                    service_type="gallery",
+                )
+            except Exception as err:  # noqa: BLE001
+                return web.json_response(
+                    {"error": f"相册域上传失败：{str(err)[:180]}"}, status=502
+                )
+            file_id = res.get("fileId") or (res.get("data") or {}).get("fileId")
+            if not file_id:
+                return web.json_response(
+                    {"error": f"设备未返回相册域 fileId：{str(res)[:160]}"}, status=502
+                )
+            try:
+                added = await client.async_add_album_members(
+                    int(album_id_raw),
+                    [int(file_id)],
+                    album_name=(request.query.get("album_name") or "").strip(),
+                    album_type=int(request.query.get("album_type") or 6),
+                )
+            except Exception as err:  # noqa: BLE001
+                return web.json_response(
+                    {"error": f"照片已传到相册域，但入册失败：{str(err)[:160]}"},
+                    status=502,
+                )
+            failed = added.get("failIds") or []
+            if failed:
+                return web.json_response(
+                    {"ok": False, "fileId": file_id, "album_id": int(album_id_raw),
+                     "error": "设备拒绝了入册", "detail": str(added)[:200]},
+                    status=502,
+                )
+            return web.json_response(
+                {"ok": True, "album_id": int(album_id_raw), "fileId": file_id,
+                 "size": total, "mode": "gallery"}
+            )
 
         parent = _parent_dir_of(dest)
         if not await ensure_dir(client, parent, category):

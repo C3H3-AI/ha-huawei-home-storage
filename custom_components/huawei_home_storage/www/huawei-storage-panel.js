@@ -1388,23 +1388,23 @@ async function albumUploadFiles(files) {
   // 照片就会被悄悄传到共享空间的暂存目录、``copy_to_album`` 也用 public ——
   // 而相册页显示的相册跟这个空间没有关系。固定用默认空间，行为可预期。
   const space = "user";
-  // 暂存目录：不污染用户的目录树，传完就留在那儿（用户可在文件页清理）
-  const staging = "/file/_相册导入/";
   let okCount = 0;
   const failures = [];
   // 复核基线：异步任务只告诉我们"受理了"，必须回查相册本身
   const before = await albumPhotoCount(a);
 
   for (const file of files) {
-    ALB.up = { name: file.name, pct: 0, phase: "upload", msg: "传到文件空间…" };
+    ALB.up = { name: file.name, pct: 0, phase: "upload", msg: "直接传到相册…" };
     if (panel) panel._draw();
     try {
-      const dest = staging + file.name;
-      await uploadRaw(file, dest, space, (pct) => {
+      // ⚡ 直传相册域（2026-10-30 抓包对齐 PC 客户端）：后端一次完成
+      // prepareUpload(service=gallery) → upload → addAlbumMemb，
+      // 设备直接返回相册域 fileId，不需要再跨域复制。
+      await uploadRaw(file, null, space, (pct) => {
         if (!ALB.up) return;
         ALB.up.pct = pct;
         if (panel) panel._draw();
-      });
+      }, { id: a.id, name: a.name, type: a.type });
       // 第二步：收进相册（``/trans/acrosscopy``）
       //
       // ✅ 2026-10-29 真机打通：这一步以前是"假成功"（返回 code 0、任务
@@ -1415,12 +1415,11 @@ async function albumUploadFiles(files) {
       // 异步任务的 code=0 不代表数据真的到了，只代表任务被受理。
       ALB.up.phase = "copy";
       ALB.up.pct = 100;
-      ALB.up.msg = "已上传，正在收进相册…";
+      ALB.up.msg = "已入册，正在核对张数…";
       if (panel) panel._draw();
-      const r = await copyPathToAlbum(dest, a.id, a.name, a.type, space);
-      if (!r.ok) {
-        failures.push(`${file.name}：${r.error}`);
-      } else if (before !== null) {
+      // 入册已经在后端做完（addAlbumMemb），这里只做**结果复核**：
+      // 设备返回 code 0 不代表相册真有这张（历史上假成功过一次）。
+      if (before !== null) {
         // 设备索引有延迟，最多等 ~6s（0.8s × 8 次）
         let now = before;
         for (let i = 0; i < 8; i += 1) {
@@ -1449,8 +1448,7 @@ async function albumUploadFiles(files) {
   }
   if (failures.length) {
     // 分开报：上传成功但收不进相册的情况必须让用户知道照片在哪
-    toast(`有 ${failures.length} 张没进相册（照片仍在「文件」→「_相册导入」）：` +
-          failures.slice(0, 2).join("；"));
+    toast(`有 ${failures.length} 张没进相册：` + failures.slice(0, 2).join("；"));
   }
 }
 
@@ -1498,7 +1496,10 @@ function renderAlbumDetail() {
   const photos = ALB.photos || [];
   // 只有**用户自建/共享相册**（albumType=6）能删、能往里传照片。
   // 智能分类/人物/地点/场景（1/2/22/23/24）是设备自动生成的，删不掉也塞不进。
-  const editable = Number(a.type) === 6;
+  // ⚠️ 自建相册的 albumType 不只有 6：2026-10-30 抓包里 PC 客户端新建的
+  // 「新建相册345」是 **5**，addAlbumMemb 也按 5 发的。只认 6 会导致
+  // 「上传照片 / 重命名 / 删除」按钮在这种相册里整片消失。
+  const editable = [5, 6].includes(Number(a.type));
   return `
     <div class="vhead">
       <button class="btn sm" data-act="alb-back">← 返回相册</button>
@@ -1506,15 +1507,14 @@ function renderAlbumDetail() {
       <span class="sub">已载入 ${photos.length} 张</span>
       <span class="spacer"></span>
       ${editable ? `<button class="btn sm pri" data-act="alb-upload"
-        title="先传到文件空间，再自动收进本相册">⬆ 上传照片</button>
+        title="直接传到本相册（不经过文件空间）">⬆ 上传照片</button>
       <button class="btn sm" data-act="alb-rename" title="改名后家庭成员都会看到">✏️ 重命名</button>
       <button class="btn sm danger" data-act="alb-del">🗑 删除相册</button>` : ""}
     </div>
-    ${editable ? `<div class="note" style="margin-bottom:12px;color:var(--warn)">
-      上传是<b>两步</b>：先传到「文件」→「_相册导入」，再跨域复制进本相册。
-      第二步走 <code>/trans/acrosscopy</code>，真机实测可用，但设备索引有延迟
-      （通常 1–3 秒）。若提示"设备返回成功但相册没变化"，照片仍在
-      「文件」→「_相册导入」里，可稍后重试或直接去那儿看。
+    ${editable ? `<div class="note" style="margin-bottom:12px;color:var(--text2)">
+      上传会<b>直接进本相册</b>（不经过文件空间），与 PC 客户端行为一致。
+      设备索引有几秒延迟，传完会自动核对张数；若提示"设备返回成功但相册没变化"，
+      请稍后刷新再看。
     </div>` : `<div class="note" style="margin-bottom:12px;color:var(--text2)">
       这是设备自动生成的「${esc(a.name)}」分类，不能上传或删除。
       要在「共享相册」里管理自建相册，请先切到那个分组。
@@ -1681,8 +1681,8 @@ function renderFiles(d) {
     </div>` : ""}
         <div class="note" style="margin-bottom:12px;color:var(--text2)">
       这里上传的是<b>文件空间</b>，不会自动进相册 —— 两者是设备上的独立存储。
-      想把它们放进相册：右键该文件 → <b>🖼️ 加入相册</b>，或直接到相册页点
-      <b>⬆ 上传照片</b>（那会先传到「_相册导入」再自动收进相册）。
+      想把它们放进相册：右键该文件 → <b>🖼️ 加入相册</b>；
+      或者到相册页点 <b>⬆ 上传照片</b>，那是直接传到相册（不经过文件空间）。
     </div>
 ${(PH.uploads && PH.uploads.length) ? `<div class="card" style="padding:12px 16px">
       <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;margin-bottom:8px">
@@ -2138,7 +2138,7 @@ function initDnd(panel) {
  * @param {(pct:number, loaded:number)=>void} [onProgress]
  * @returns {Promise<{path:string,size:number}>}
  */
-async function uploadRaw(file, destPath, space, onProgress) {
+async function uploadRaw(file, destPath, space, onProgress, album) {
   const eid = window.__hs_entry_id || "";
   const h = hassOf();
   // ⚠️ 必须带 account（2026-10-29 修）：上传是**写操作**，后端
@@ -2147,8 +2147,17 @@ async function uploadRaw(file, destPath, space, onProgress) {
   // 用户以为传到了 A，实际落在 B，且两个账号的目录树看起来一样，
   // 很难发现。files / albums / recycle 三个读接口都带了 account，唯独漏了这里。
   const acc = SEL.account ? `&account=${encodeURIComponent(SEL.account)}` : "";
-  const url = `/api/huawei_home_storage/upload/${encodeURIComponent(eid)}`
-    + `?path=${encodeURIComponent(destPath)}&space=${encodeURIComponent(space)}${acc}`;
+  // 相册直传（2026-10-30）：带 album_id 时后端走 /gallery/prepareUpload →
+  // /upload?service=gallery → /gallery/addAlbumMemb，**一步进相册**，
+  // 不再需要"传到 /file/ 再跨域复制"。
+  const url = album
+    ? `/api/huawei_home_storage/upload/${encodeURIComponent(eid)}`
+      + `?album_id=${encodeURIComponent(album.id)}`
+      + `&album_name=${encodeURIComponent(album.name || "")}`
+      + `&album_type=${encodeURIComponent(album.type)}`
+      + `&name=${encodeURIComponent(file.name)}${acc}`
+    : `/api/huawei_home_storage/upload/${encodeURIComponent(eid)}`
+      + `?path=${encodeURIComponent(destPath)}&space=${encodeURIComponent(space)}${acc}`;
 
   // 用 XHR 才能拿到上传进度（fetch 没有 progress 事件）
   const token = (h.auth && h.auth.data && h.auth.data.access_token) || null;

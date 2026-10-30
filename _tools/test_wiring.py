@@ -569,46 +569,40 @@ class AlbumUiTest(unittest.TestCase):
         body = src[start: start + 1 + nxt.start()] if nxt else src[start:]
         self.assertIn("window.confirm", body, "删除相册没有用户确认，一键就没了")
 
-    def test_album_upload_routes_through_copy_to_album(self):
-        """相册页「上传照片」必须走 ``copyPathToAlbum``（= ``copy_to_album``）。
+    def test_album_upload_goes_direct_to_album(self):
+        """相册页「上传照片」必须**直接传到相册域**，不得再走跨域复制。
 
-        🚨 这条断言**被真机改了两遍**，过程本身就是这个 bug 的完整病历：
+        🚨 这条断言本身换过三次方向，是同一个问题反复被误判的记录：
 
-        1. 起初断言"必须走 copy_to_album"（理由：相册域上传卡 30104）。
-        2. 真机一测：``copy_to_album`` 假成功（code 0 / progress 100 / 相册不变），
-           于是断言被**反转**成"不得走"，入口也从 UI 上撤掉了。
-        3. 后来拿 ``capture.jsonl`` 的真实报文逐字段对比，发现 ``dest.dirs``
-           少了 ``addTime``。补上后真机实测：临时相册 0 张 → 3 秒内 1 张，
-           且照片拿到相册域 fileId（281474976755904）。断言再改回来。
+        1. 起初断言"必须走 copy_to_album"（理由：相册域上传卡 30104）；
+        2. 真机一测 copy_to_album 假成功，断言被反转成"不得走"，入口也撤了；
+        3. 补上 addTime 后 copy_to_album 通了，断言再改回来；
+        4. **2026-10-30 抓包推翻前提**：相册域上传一直可用（30104 是我们
+           自己三处 bug 造成的），PC 客户端就是 prepareUpload(gallery) →
+           upload → addAlbumMemb。于是改回"直传"，不再需要跨域复制。
 
-        所以这里**不是**在测"某个函数名出现过"，是在测一条被真机验证过的
-        路径不被悄悄改掉。
+        教训：这条测试反复反转，是因为它一直在锁"当前的做法"。真正该锁的是
+        **使用者能感知的结果**：照片进了相册。所以下面除了路径，还断言
+        「必须回查张数」—— 那才是防止假成功的关键。
         """
         body = fn_body("albumUploadFiles")
         self.assertIn(
+            "album", body,
+            "上传流程没有把相册信息传给后端（无法直传进相册）",
+        )
+        self.assertNotIn(
             "copyPathToAlbum", body,
-            "上传流程没有把照片收进相册（漏了 copyPathToAlbum）—— "
-            "那上传就只到文件空间，用户在相册里永远看不到新照片",
+            "上传流程还在走跨域复制 —— 相册域直传已可用，多一次任务且更易假成功",
         )
         self.assertNotIn(
             "add_to_album", body,
-            "上传流程用了 add_to_album —— 它只认相册域 fileId，"
-            "拿文件域 id 去调必被拒 30101",
+            "上传流程用了 add_to_album —— 那是给「已有照片」用的另一个服务",
         )
-        # 第二段：``copyPathToAlbum`` 是**重试壳**（设备索引延迟时"找不到源文件"），
-        # 真正发请求的是 ``copyPathToAlbumOnce``。断言要顺着链路走，
-        # 不能停在壳上 —— 否则壳里换掉实现也测不出来。
+        # 关键：设备返回 code 0 不代表照片真的进去了，必须回查
         self.assertIn(
-            "copyPathToAlbumOnce", fn_body("copyPathToAlbum"),
-            "copyPathToAlbum 没有调用单次实现（链路断了）",
+            "albumPhotoCount", body,
+            "上传后没有回查相册张数 —— 设备假成功过一次，不看张数就是自欺",
         )
-        once = fn_body("copyPathToAlbumOnce")
-        self.assertIn(
-            'svc("copy_to_album"', once,
-            "copyPathToAlbumOnce 没有调 copy_to_album（链路断了）",
-        )
-        self.assertIn("album_category", once, "copy_to_album 没传 album_category")
-        self.assertIn("category", once, "copy_to_album 没传 category")
 
     def test_album_upload_verifies_before_claiming_success(self):
         """收进相册之后必须**回查相册张数**，不能只凭 ``code=0`` 报成功。
@@ -628,13 +622,15 @@ class AlbumUiTest(unittest.TestCase):
         # ⚠️ 只查字符串存在是不够的（第 6 次恒真断言就栽在这）：
         # 把条件改成 `else if (false)` 让复核永不执行，`albumPhotoCount`
         # 仍然在文件里，断言照样通过。必须断言**真实的分支条件**。
+        # 直传之后不再是 ``else if`` 结构（前面没有 copy 调用），所以只断言
+        # "有一个以 before !== null 为条件的复核分支"，且不是常量条件。
         self.assertRegex(
-            body, r"else if \(before !== null\)",
+            body, r"if \(before !== null\)",
             "复核分支的条件不是 before !== null —— 它可能被改成恒假，"
             "于是复核形同虚设，又回到凭 code=0 报成功",
         )
         self.assertNotRegex(
-            body, r"else if \(\s*(?:false|true|0|1)\s*\)",
+            body, r"if \(\s*(?:false|true|0|1)\s*\)",
             "复核分支被写成常量条件（恒真/恒假），要么永远不复核、要么"
             "在拿不到基线时也强行复核",
         )
@@ -644,18 +640,23 @@ class AlbumUiTest(unittest.TestCase):
         )
 
     def test_album_upload_reports_partial_failure(self):
-        """上传成功但收不进相册时，必须告诉用户照片在哪。
+        """部分失败必须逐个点名，不能"成功 N 张"一句话糊过去。
 
-        两步操作里第二步失败，最容易让用户以为"照片丢了"。实际照片还在
-        文件空间里，必须指明位置。
+        ⚠️ 这条原来还断言文案里要出现「_相册导入」—— 那是两步上传时代的
+        暂存目录：失败的照片留在那儿，得告诉用户去哪找。改成相册域直传后
+        **没有暂存目录**了，照片要么进了相册、要么根本没上传成功。
+        继续要求那句文案，等于把一个已不存在的机制写进断言。
         """
         body = fn_body("albumUploadFiles")
-        self.assertIn(
-            "_相册导入", body,
-            "没有告知暂存目录，用户找不到「上传成功但没进相册」的照片在哪",
-        )
+        self.assertIn("failures", body, "没有收集失败项")
         self.assertRegex(
-            body, r"failures", "没有记录失败项，用户不知道哪几张没进相册"
+            body, r"failures\.slice\(|failures\.map\(|failures\.join\(",
+            "失败项没有逐条展示（只报了数量或一句话）",
+        )
+        self.assertIn("没进相册", body, "失败时没有明确告知用户")
+        self.assertNotIn(
+            "_相册导入", body,
+            "还在提「_相册导入」暂存目录 —— 直传已经不用它了，会误导用户",
         )
 
     def test_move_copy_sends_dest_category(self):
@@ -697,9 +698,18 @@ class AlbumUiTest(unittest.TestCase):
         start = src.find("function renderAlbumDetail(")
         nxt = re.search(r"\nasync function |\nfunction ", src[start + 1:])
         body = src[start: start + 1 + nxt.start()] if nxt else src[start:]
-        self.assertIn(
-            "=== 6", body, "相册详情页没有按 albumType=6 限制可编辑性"
+        # 自建相册的 albumType 不只有 6：2026-10-30 抓包里 PC 客户端新建的
+        # 「新建相册345」是 **5**，addAlbumMemb 也按 5 发。只认 6 会让这类
+        # 相册的上传/改名/删除按钮整片消失。
+        self.assertTrue(
+            "[5, 6].includes" in body or ("=== 5" in body and "=== 6" in body),
+            "相册详情页没有把 albumType 5/6 都当成可编辑（自建相册可能是 5）",
         )
+        for auto in ("22", "23", "24"):
+            self.assertNotIn(
+                f"=== {auto}", body,
+                f"albumType={auto} 是设备自动生成的分类，不该被视为可编辑",
+            )
 
 
     def test_album_upload_uses_fixed_space(self):

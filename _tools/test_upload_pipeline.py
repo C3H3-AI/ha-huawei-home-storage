@@ -329,18 +329,23 @@ class GalleryUploadStatusTest(unittest.TestCase):
         self.assertIn("prep_items", window, "没有记录 prep_items/prep_files 那个笔误")
         self.assertIn("mediaType", window, "没有记录 mediaType 必须按类型传")
 
-    def test_gallery_upload_has_no_caller(self):
-        """当前不该有调用方 —— 有了就意味着有人接了个跑不通的功能。"""
+    def test_gallery_upload_has_a_caller(self):
+        """相册域上传**必须**有调用方，否则功能等于不存在。
+
+        ⚠️ 这条原来写的是反的（"不该有调用方 —— 有了就意味着有人接了个跑不通
+        的功能"）。它和上一条一样，是在给**上一轮的错误结论**上锁：正因为
+        "没有调用方"，那段分支里的 ``prep_items``/``prep_files`` 笔误才一直
+        没人发现（调用即 NameError）。死代码最擅长藏 bug。
+        """
         callers = []
         for path in COMPONENT.rglob("*.py"):
             if path.name == "transfer.py":
                 continue
-            text = _read(path)
-            if re.search(r'service_type\s*=\s*["\']gallery["\']', text):
+            if re.search(r'service_type\s*=\s*["\']gallery["\']', _read(path)):
                 callers.append(path.name)
-        self.assertEqual(
-            callers, [],
-            f"这些文件在调用未跑通的 gallery 域上传: {callers}",
+        self.assertTrue(
+            callers,
+            "没有任何地方调用 gallery 域上传 —— 这段代码永远不会被执行",
         )
 
     def test_device_py_does_not_claim_filesvc_fileid_is_gallery(self):
