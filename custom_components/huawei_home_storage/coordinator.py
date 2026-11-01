@@ -153,14 +153,59 @@ class _HuaweiBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _run(self, label: str, coro: Any) -> Any:
-        """执行单个采集动作，异常统一分类。"""
+        """执行单个采集动作，异常统一分类。
+
+        ⚠️ 认证失败不再立即弹「重新认证」（2026-11-01 改）：
+
+        ``HuaweiDeviceAuthError`` 表示「这次没拿到有效设备凭据」，它可能来自
+        两层原因，只有**两层都失效**才需要用户重新输密码：
+
+        1. **账号会话**（OAuth refresh_token）—— 真过期就只能重新登录
+        2. **设备凭据**（云侧 startService 下的隧道 + dataToken）—— 寿命很短
+           （dataToken 只有几十秒），随时可能因隧道换端口、MQTT 抖动、多端
+           登录互踢而失效，但只要账号会话还在，重新 startService 就能自愈
+
+        原实现只要第 2 层失败就抛 ``ConfigEntryAuthFailed``，用户看到
+        「身份验证已过期」，而实际上一次重试就恢复了 —— 智慧生活集成不会
+        出现这个提示，正是因为它只把第 1 层的真失效能当成 reauth。
+
+        现在：第 2 层失败先按「可重试」处理（UpdateFailed + 下轮重连），
+        只有第 1 层（账号会话）也判定失效时，才升级成 ConfigEntryAuthFailed。
+        """
         try:
             return await coro
         except HuaweiDeviceAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            if self._account_session_expired():
+                # 两层都失效 —— 这才真的需要用户重新登录
+                raise ConfigEntryAuthFailed(str(err)) from err
+            # 只有设备凭据层失败：账号还在，下轮重新 startService 即可自愈
+            _LOGGER.debug(
+                "%s 设备凭据失效（账号会话仍有效，下轮重取）: %s", label, err
+            )
+            raise UpdateFailed(f"设备凭据失效（可重试）: {err}") from err
         except HuaweiDeviceError as err:
             _LOGGER.debug("%s 采集失败: %s", label, err)
             raise UpdateFailed(f"设备不可达: {err}") from err
+
+    def _account_session_expired(self) -> bool:
+        """第 1 层判定：账号 OAuth 会话是否真的过期。
+
+        拿不到会话对象时**保守返回 False** —— 宁可多等一轮重试，
+        也不要因为拿不到判断依据就打扰用户重新登录。
+        """
+        session = getattr(self.client, "account_session", None)
+        if session is None:
+            checker = getattr(self.client, "is_account_session_valid", None)
+            if checker is None:
+                return False
+            try:
+                return not bool(checker())
+            except Exception:  # noqa: BLE001 - 判断失败按「未过期」处理
+                return False
+        try:
+            return not bool(session.is_oauth_valid(_ACCOUNT_EXPIRY_MARGIN))
+        except Exception:  # noqa: BLE001
+            return False
 
 
 class HuaweiFastCoordinator(_HuaweiBaseCoordinator):
