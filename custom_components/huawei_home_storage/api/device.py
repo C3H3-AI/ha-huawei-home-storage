@@ -235,12 +235,14 @@ class HuaweiDeviceClient:
         creds_provider: CredsProvider,
         control_port: int = DEVICE_PORT,
         data_port: int = DATA_PORT,
+        creds_invalidator: Callable[[], None] | None = None,
     ) -> None:
         self._session = session
         self.host = host
         self._control_port = control_port
         self._data_port = data_port
         self._creds_provider = creds_provider
+        self._creds_invalidator = creds_invalidator
         self._creds: DeviceCredentials | None = None
         #: 上次成功换取凭据的**单调时钟**（用于节流，见 async_ensure_fresh_credentials）
         self._creds_at: float = 0.0
@@ -263,14 +265,51 @@ class HuaweiDeviceClient:
         return self._creds.user if self._creds else ""
 
     async def async_refresh_credentials(self) -> DeviceCredentials:
-        """向云侧换取全新设备凭据。"""
+        """向云侧换取全新设备凭据。
+
+        ⚠️ 认证类错误也要重试一次（2026-11-01 加）：
+
+        ``HuaweiCloudAuthError`` 以前被直接当成「凭据真失效」抛成
+        ``HuaweiDeviceAuthError`` → ``ConfigEntryAuthFailed`` → HA 弹
+        「身份验证已过期」。但华为侧会把**偶发故障**也报成认证错误：
+
+        * MQTT startService 超时后返回 401/未授权
+        * 同一账号在别处登录触发互踢
+        * 服务端提前回收 access_token
+
+        这些情况下重新走一遍「清令牌缓存 → 重新登录 → 重新 startService」
+        就能自愈，用户不该被要求重新输密码。所以这里先重试一次：
+        重试仍失败，才认定是 refresh_token 真的过期，抛 AuthError。
+        """
         async with self._lock:
             try:
                 creds = await self._creds_provider()
-            except HuaweiCloudAuthError as err:
-                # 凭据/授权真的失效（refresh_token 过期、缺 token）：
-                # 只有这种情况才该让 HA 弹重新认证。
-                raise HuaweiDeviceAuthError(f"获取设备凭据失败: {err}") from err
+            except HuaweiCloudAuthError as err_auth:
+                # 先静默重试一次，排除偶发故障
+                _LOGGER.debug(
+                    "获取设备凭据报认证错误，静默重试一次: %s", err_auth
+                )
+                # 清掉云端令牌缓存，确保重试用的是全新 token。
+                # creds_provider 常是闭包（拿不到 __self__），所以优先用
+                # 显式注入的 invalidator；没有就跳过（cloud 内部自己还有一层
+                # 「取凭据失败 → 清缓存重试」）。
+                if self._creds_invalidator is not None:
+                    try:
+                        self._creds_invalidator()
+                    except Exception:  # noqa: BLE001 - 清缓存失败不影响重试
+                        _LOGGER.debug("清除令牌缓存失败", exc_info=True)
+                try:
+                    creds = await self._creds_provider()
+                except HuaweiCloudAuthError as err2:
+                    # 连续两次认证失败 —— 这才是 refresh_token 真的过期了
+                    raise HuaweiDeviceAuthError(
+                        f"获取设备凭据失败(连续 {2} 次认证错误): {err2}"
+                    ) from err2
+                except HuaweiCloudError as err2:
+                    # 重试时变成非认证错误，属于瞬时故障，走可重试路径
+                    raise HuaweiDeviceError(
+                        f"获取设备凭据失败（可重试）: {err2}"
+                    ) from err2
             except HuaweiCloudError as err:
                 # 其它云侧故障（MQTT 超时、链路被截断、响应非 JSON 等）都是
                 # **瞬时/设备侧**问题，不是凭据失效。
