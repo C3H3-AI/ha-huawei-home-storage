@@ -329,6 +329,9 @@ def _build_client(
         session=session,
         host=entry.data.get(CONF_HOST, ""),
         creds_provider=provide_credentials,
+        # 认证类错误重试前清掉云端令牌缓存（2026-11-01）：
+        # 华为偶发把 MQTT 超时/互踢报成认证错误，重取令牌即可自愈。
+        creds_invalidator=cloud.invalidate_access_token,
     )
 
 
