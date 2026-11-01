@@ -236,6 +236,7 @@ class HuaweiDeviceClient:
         control_port: int = DEVICE_PORT,
         data_port: int = DATA_PORT,
         creds_invalidator: Callable[[], None] | None = None,
+        account_session_validator: Callable[[], bool] | None = None,
     ) -> None:
         self._session = session
         self.host = host
@@ -243,6 +244,10 @@ class HuaweiDeviceClient:
         self._data_port = data_port
         self._creds_provider = creds_provider
         self._creds_invalidator = creds_invalidator
+        #: 第 1 层凭据（账号 OAuth 会话）是否仍然有效的判据。
+        #: coordinator 用它区分「设备凭据层抖动」与「账号真的过期」，
+        #: 只有后者才该弹「需要重新认证」。
+        self._account_session_validator = account_session_validator
         self._creds: DeviceCredentials | None = None
         #: 上次成功换取凭据的**单调时钟**（用于节流，见 async_ensure_fresh_credentials）
         self._creds_at: float = 0.0
@@ -331,6 +336,19 @@ class HuaweiDeviceClient:
             self._creds = creds
             self._creds_at = _time.monotonic()
             return creds
+
+    def is_account_session_valid(self) -> bool:
+        """第 1 层判定：账号 OAuth 会话是否仍然有效。
+
+        没有注入判据时保守返回 True（视为有效），让上层走「可重试」路径，
+        不打扰用户重新登录。
+        """
+        if self._account_session_validator is None:
+            return True
+        try:
+            return bool(self._account_session_validator())
+        except Exception:  # noqa: BLE001 - 判断失败按有效处理
+            return True
 
     async def async_ensure_credentials(self) -> DeviceCredentials:
         if self._creds is None:

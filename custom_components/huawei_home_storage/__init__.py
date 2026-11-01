@@ -53,6 +53,10 @@ from .views import async_register_views, async_unregister_views
 
 _LOGGER = logging.getLogger(__name__)
 
+#: 判定账号 OAuth 会话是否过期的余量（秒）。与 ``huawei_account._REFRESH_MARGIN_SECONDS``
+#: 保持一致：临近过期就当作「该刷新了」，不作为弹「重新认证」的依据。
+_ACCOUNT_EXPIRY_MARGIN_SECONDS = 300
+
 TOKEN_STORE_VERSION = 1
 TOKEN_STORE_KEY = "refresh_token"
 
@@ -138,6 +142,21 @@ def _account_token_provider(
             )
         return token
 
+    def session_valid() -> bool:
+        """第 1 层判定：账号 OAuth 会话是否仍然有效。
+
+        coordinator 用它区分「设备凭据层抖动」与「账号真的过期」——
+        只有后者才该弹「需要重新认证」。拿不到会话时保守返回 True。
+        """
+        session = state.get("session")
+        if session is None:
+            return True
+        try:
+            return bool(session.is_oauth_valid(_ACCOUNT_EXPIRY_MARGIN_SECONDS))
+        except Exception:  # noqa: BLE001 - 判断失败按「有效」处理
+            return True
+
+    provider.session_valid = session_valid  # type: ignore[attr-defined]
     return provider
 
 
@@ -298,11 +317,14 @@ def _build_client(
             hass, TOKEN_STORE_VERSION, f"{DOMAIN}.{entry.entry_id}.{key}"
         )
         stored_acc = hass.data.get(f"{DOMAIN}.{entry.entry_id}.{key}") or {}
+        # 提成变量：下面 build HuaweiDeviceClient 时要读它的 session_valid，
+        # 判断账号 OAuth 会话是否仍然有效（两层认证判定的第 1 层）。
+        token_provider = _account_token_provider(
+            hass, entry, acct_store, stored_acc, account
+        )
         cloud = HuaweiCloudClient(
             session,
-            token_provider=_account_token_provider(
-                hass, entry, acct_store, stored_acc, account
-            ),
+            token_provider=token_provider,
         )
         uid = account.get("uid")
         dev_mac = account.get("dev_mac") or derive_dev_mac(f"{cloud_dev_id}|{key}")
@@ -332,6 +354,11 @@ def _build_client(
         # 认证类错误重试前清掉云端令牌缓存（2026-11-01）：
         # 华为偶发把 MQTT 超时/互踢报成认证错误，重取令牌即可自愈。
         creds_invalidator=cloud.invalidate_access_token,
+        # 第 1 层判据（2026-11-01）：只有账号 OAuth 会话也失效时，
+        # 设备凭据层的失败才升级成「需要重新认证」。
+        account_session_validator=getattr(
+            token_provider, "session_valid", None
+        ),
     )
 
 
